@@ -1,0 +1,13 @@
+schema_version = "1.0.0"
+id = "sprite_sheet_maker"
+version = "1.0.1"
+name = "Sprite Sheet Maker"
+tagline = "An addon to convert your 3D animations into 2D sprite sheets with in-built toggleable pixelation"
+maintainer = "Manas R. Makde"
+type = "add-on"
+website = "https://github.com/ManasMakde/SpriteSheetMaker/"
+tags = ["Animation", "Render"]
+blender_version_min = "5.0.0"
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
