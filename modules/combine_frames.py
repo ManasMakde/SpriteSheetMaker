@@ -25,11 +25,15 @@ class SpriteConsistency(Enum):
     ROW = "Row Consistent"
     ALL = "All Consistent"
 
+class LabelParam():
+    text:str = "Untitled"
+    font_size:int = 24
+    margin:int = 15
+
 class AssembleParam():
     input_folder_path: str = ""
     output_file_path : str = ""
-    font_size: int = 24
-    margin: int = 15
+    label_param: LabelParam = LabelParam()
     consistency: SpriteConsistency = SpriteConsistency.INDIVIDUAL
     align: SpriteAlign = SpriteAlign.BOTTOM_CENTER
 
@@ -65,7 +69,9 @@ def assemble_sprite_sheet(param:AssembleParam):
     print(f"[SpriteSheetMaker {datetime.now()}] Creating sprite sheet for folder '{param.input_folder_path}'")
 
     # Load font and Get all sorted action sub folders
-    font = ImageFont.load_default(param.font_size) if param.font_size !=0 else None
+    font_size = param.label_param.font_size
+    margin = param.label_param.margin
+    font = ImageFont.load_default(font_size) if font_size !=0 else None
     action_folders = sorted(
         [folder for folder in os.listdir(param.input_folder_path) if os.path.isdir(os.path.join(param.input_folder_path, folder))],
         key=lambda x: int(x.split('_')[0])
@@ -88,9 +94,9 @@ def assemble_sprite_sheet(param:AssembleParam):
         for img_name in img_names:
             try:
                 img_path = os.path.join(action_folder_path, img_name)
-                img_obj = Image.open(img_path)
-                img_row.append(img_obj)
-                width, height = img_obj.size
+                img = Image.open(img_path)
+                img_row.append(img)
+                width, height = img.size
                 global_widest_img_width, global_tallest_img_height = max(global_widest_img_width, width), max(global_tallest_img_height, height)
                 row_widest_img_width, row_tallest_img_height = max(row_widest_img_width, width), max(row_tallest_img_height, height)
             except Exception:
@@ -114,21 +120,21 @@ def assemble_sprite_sheet(param:AssembleParam):
 
 
         # Calculate label location
-        label_bbox = (0, 0, 0, 0) if param.font_size == 0 else font.getbbox(label_text)
+        label_bbox = (0, 0, 0, 0) if font_size == 0 else font.getbbox(label_text)
         label_height = (label_bbox[3] - label_bbox[1])
         label_width = (label_bbox[2] - label_bbox[0])
-        label_location = (param.margin, total_height + param.margin - label_bbox[1]) # `label_bbox[1]` kept intentionally DO NOT REMOVE
+        label_location = (margin, total_height + margin - label_bbox[1]) # `label_bbox[1]` kept intentionally DO NOT REMOVE
         label_data = (label_text, label_location[0], label_location[1])
 
 
         # Increase total height & total width from label
-        total_width = max(total_width, param.margin + label_width + param.margin)  
-        total_height += param.margin + label_height + param.margin
+        total_width = max(total_width, margin + label_width + margin)  
+        total_height += margin + label_height + margin
 
 
         # Calculate image locations
         images_data = []
-        row_width = param.margin
+        row_width = margin
         row_height = 0.0
         for img in row_images:
 
@@ -147,7 +153,7 @@ def assemble_sprite_sheet(param:AssembleParam):
 
 
             # Increase row height & row width from image
-            row_width += large_width + param.margin 
+            row_width += large_width + margin 
             row_height = max(row_height, large_height)
 
 
@@ -161,7 +167,7 @@ def assemble_sprite_sheet(param:AssembleParam):
 
 
     # Ending margins
-    total_height += param.margin
+    total_height += margin
     
 
     # Create sprite sheet
@@ -180,7 +186,7 @@ def assemble_sprite_sheet(param:AssembleParam):
 
 
         # Paste label
-        if(param.font_size != 0):
+        if(font_size != 0):
             label_name, label_location_x, label_location_y = row_data
             draw.text((int(label_location_x), int(label_location_y)), label_name, fill="white", font=font, spacing = 0)
 
@@ -195,3 +201,60 @@ def assemble_sprite_sheet(param:AssembleParam):
     print(f"[SpriteSheetMaker {datetime.now()}] Saving sprite sheet to '{param.output_file_path}' ...")
     sheet.save(param.output_file_path)
     print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite sheet to {param.output_file_path}")
+
+def add_label_to_image(img_path:str, param:LabelParam, img_output_path:str = ""):
+
+    # Notify
+    print(f"[SpriteSheetMaker {datetime.now()}] Adding label and margin to {img_path} ...")
+
+
+    # Get essentials
+    font_size = param.font_size
+    margin = param.margin
+
+
+    # Get label data
+    font = ImageFont.load_default(font_size) if font_size !=0 else None
+    label_bbox = (0, 0, 0, 0) if font_size == 0 else font.getbbox(param.text)
+    label_width = (label_bbox[2] - label_bbox[0])
+    label_height = (label_bbox[3] - label_bbox[1])
+
+
+    # Get image data
+    img = Image.open(img_path)
+    img_width, img_height = img.size
+    img_mode = img.mode
+
+
+    # Dimensions & Locations
+    img_location = (0, 0)
+    label_location = (0, 0)
+
+
+    # Calculate new width and height 
+    total_width = img_width + margin * 2
+    total_height = img_height + margin * 2
+    if(font_size != 0):
+        total_width = max(total_width, label_width + margin * 2)
+        total_height += label_height + margin
+
+
+    # Calculate locations
+    img_location = (margin, margin + (0 if font_size == 0 else (label_height + margin)))
+    label_location = (margin, margin - label_bbox[1])
+
+
+    # Create new image
+    new_img = Image.new(img_mode, (int(total_width), int(total_height)), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(new_img)
+
+
+    # Paste in new image
+    new_img.paste(img, (int(img_location[0]), int(img_location[1])))
+    if(font_size != 0):
+        draw.text((int(label_location[0]), int(label_location[1])), param.text, fill="white", font=font, spacing = 0)
+
+
+    # Save new image
+    new_img.save(img_output_path if (img_output_path != "" and img_output_path != None) else img_path)
+    print(f"[SpriteSheetMaker {datetime.now()}] Successfully added label and margin to {img_path}")

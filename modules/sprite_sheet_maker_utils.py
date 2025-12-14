@@ -12,8 +12,9 @@ from .combine_frames import SpriteConsistency, SpriteAlign, AssembleParam, assem
 
 TEMP_FOLDER_NAME = "SpriteSheetMakerTemp"
 CAMERA_NAME = "SpriteSheetMakerCamera"
+PIXELATE_SCENE_NAME = "SpriteSheetMakerPixelateScene"
 PIXELATE_COMPOSITOR_NAME = "SpriteSheetMakerPixelate"
-SPRITE_SHEET_MAKER_BLEND_FILE = "./blend_files/SpriteSheetMaker.blend"
+SPRITE_SHEET_MAKER_BLEND_FILE = "../blend_files/SpriteSheetMaker.blend"
 IMAGE_INPUT_NODE = "ImageInput"
 PIXELATION_AMOUNT_NODE = "PixelationAmount"
 SHRINK_SCALE_NODE = "ShrinkScale"
@@ -46,10 +47,9 @@ class CameraDirection(Enum):
     NEG_Z = "-z"
 
 class ScaleInterpType(Enum):
-    NEAREST = "Nearest"
-    BILINEAR = "Bilinear"
-    BICUBIC = "Bicubic"
-    ANISOTROPIC = "Anisotropic"
+    NEAREST = "NEAREST"
+    BILINEAR = "BILINEAR"
+    BICUBIC = "BICUBIC"
 
 class AutoCaptureParam():
     objects:set = set({})
@@ -254,7 +254,7 @@ def render(output_file_path: str):
     # Start Render
     bpy.ops.render.render(write_still=True)
 
-def pixelate_image(image_path: str, param: PixelateParam, output_image_path = None):  # If output_image_path is None then will replace original image
+def pixelate_images(image_paths: dict[str, str], param: PixelateParam):  # images = { "input/path/to/image.png" : "output/path/to/images.png" }
 
     # if pixelate compositor does not exist then import from sprit maker blend file
     if PIXELATE_COMPOSITOR_NAME not in bpy.data.node_groups:
@@ -280,71 +280,101 @@ def pixelate_image(image_path: str, param: PixelateParam, output_image_path = No
     
 
     # Get compositor & make sure it's a compositor node tree
-    pixelate_tree = bpy.data.node_groups[PIXELATE_COMPOSITOR_NAME]
-    if pixelate_tree.bl_idname != "CompositorNodeTree":
+    pixelate_group = bpy.data.node_groups[PIXELATE_COMPOSITOR_NAME]
+    if pixelate_group.bl_idname != "CompositorNodeTree":
         print(f"[SpriteSheetMaker {datetime.now()}] '{PIXELATE_COMPOSITOR_NAME}' is not a CompositorNodeTree!")
         return
-    
+
 
     # Save old values
-    old_compositor = bpy.context.scene.compositing_node_group
-    old_resolution_x = bpy.context.scene.render.resolution_x
-    old_resolution_y = bpy.context.scene.render.resolution_y
-    
-
-    # Set pixelate compositor
-    bpy.context.scene.compositing_node_group = pixelate_tree
+    original_scene = bpy.context.scene
 
 
-    # Assign image which is to be pixelated
-    image_node = pixelate_tree.nodes.get(IMAGE_INPUT_NODE)
-    image = bpy.data.images.load(image_path)
-    if image_node is not None:
-        image_node.image = image
+    # Create temp scene
+    pixel_scene = bpy.data.scenes.new(PIXELATE_SCENE_NAME)
+    bpy.context.window.scene = pixel_scene
+    pixel_scene.use_nodes = True
 
 
-    # Assign pixelation amount
-    pixel_node = pixelate_tree.nodes.get(PIXELATION_AMOUNT_NODE)
-    if pixel_node is not None:
-        pixel_node.outputs[0].default_value = (1.0 - param.pixelation_amount)
+    # Intentionally kept inside try so that temp scene is deleted even incase of failure
+    exception = None
+    try:
+        # Remove and existing nodes from compositor
+        tree = pixel_scene.node_tree
+        tree.nodes.clear()
 
 
-    # Assign shrink interpolation
-    shrink_scale_node = pixelate_tree.nodes.get(SHRINK_SCALE_NODE)
-    if shrink_scale_node is not None:
-        shrink_scale_node.inputs[5].default_value = param.shrink_interp.value
+        # Create a new node group & connect it with "Composite" node
+        group_node = tree.nodes.new("CompositorNodeGroup")
+        group_node.node_tree = pixelate_group
+        composite_node = tree.nodes.new("CompositorNodeComposite")
+        tree.links.new(group_node.outputs[0], composite_node.inputs[0])
 
 
-    # Assign color amount
-    color_amount_node = pixelate_tree.nodes.get(COLOR_AMOUNT_NODE)
-    if color_amount_node is not None:
-        color_amount_node.outputs[0].default_value = param.color_amount
+        # Assign pixelation amount
+        pixel_node = pixelate_group.nodes.get(PIXELATION_AMOUNT_NODE)
+        if pixel_node is not None:
+            pixel_node.outputs[0].default_value = (1.0 - param.pixelation_amount)
 
 
-    # Assign minimum alpha
-    min_alpha_node = pixelate_tree.nodes.get(MIN_ALPHA_NODE)
-    if min_alpha_node is not None:
-        min_alpha_node.outputs[0].default_value = param.min_alpha
+        # Assign shrink interpolation
+        shrink_scale_node = pixelate_group.nodes.get(SHRINK_SCALE_NODE)
+        if shrink_scale_node is not None:
+            shrink_scale_node.interpolation = param.shrink_interp.value
 
 
-    # Assign alpha step
-    alpha_step_node = pixelate_tree.nodes.get(ALPHA_STEP_NODE)
-    if alpha_step_node is not None:
-        alpha_step_node.outputs[0].default_value = param.alpha_step
+        # Assign color amount
+        color_amount_node = pixelate_group.nodes.get(COLOR_AMOUNT_NODE)
+        if color_amount_node is not None:
+            color_amount_node.outputs[0].default_value = param.color_amount
 
 
-    # Render image
-    print(f"[SpriteSheetMaker {datetime.now()}] Rendering pixelated sprite")
-    width, height = image.size
-    bpy.context.scene.render.resolution_x = int(width * (1.0 - param.pixelation_amount))  # Shrink resolution before rendering
-    bpy.context.scene.render.resolution_y = int(height * (1.0 - param.pixelation_amount))
-    render(image_path if (output_image_path is None) else output_image_path)
+        # Assign minimum alpha
+        min_alpha_node = pixelate_group.nodes.get(MIN_ALPHA_NODE)
+        if min_alpha_node is not None:
+            min_alpha_node.outputs[0].default_value = param.min_alpha
+
+
+        # Assign alpha step
+        alpha_step_node = pixelate_group.nodes.get(ALPHA_STEP_NODE)
+        if alpha_step_node is not None:
+            alpha_step_node.outputs[0].default_value = param.alpha_step
+
+
+        # Iterate through all images & render pixelated version
+        image_node = pixelate_group.nodes.get(IMAGE_INPUT_NODE)
+        for input_path in image_paths:
+
+            # Assign image to pixelate
+            image = bpy.data.images.load(input_path)
+            if image_node is not None:
+                image_node.image = image
+
+            # Assign Render settings
+            width, height = image.size
+            pixel_scene.render.resolution_x = int(width * (1.0 - param.pixelation_amount))
+            pixel_scene.render.resolution_y = int(height * (1.0 - param.pixelation_amount))
+
+            # Assign output path
+            output_path = image_paths[input_path]
+            pixel_scene.render.filepath = (output_path if (output_path != "" and output_path != None) else input_path)  # Override existing if no output path is given
+            
+            # Render pixelated version
+            print(f"[SpriteSheetMaker {datetime.now()}] Rendering pixelated sprite")
+            bpy.ops.render.render(scene=pixel_scene.name, write_still=True)
+    except Exception as e:
+        exception = e
+        print(f"[SpriteSheetMaker {datetime.now()}] Failed to pixelate image: {e} \n {traceback.format_exc()}")
 
 
     # Set back old values
-    bpy.context.scene.render.resolution_x = old_resolution_x 
-    bpy.context.scene.render.resolution_y = old_resolution_y 
-    bpy.context.scene.compositing_node_group = old_compositor if (old_compositor != pixelate_tree) else None
+    bpy.context.window.scene = original_scene
+    bpy.data.scenes.remove(pixel_scene)
+
+
+    # Throw exception incase of failure
+    if(exception != None):
+        raise exception
 
 def create_folder(at_path, folder_name):
 
@@ -380,11 +410,6 @@ class SpriteSheetMaker():
         self.on_sprite_creating.broadcast(param)
 
 
-        # Change render to image type
-        if(bpy.context.scene.render.image_settings.media_type != 'IMAGE'):
-            bpy.context.scene.render.image_settings.media_type = 'IMAGE'
-
-
         # Store old resolutions, Incase of pixelation
         old_resolution_x = bpy.context.scene.render.resolution_x
         old_resolution_y = bpy.context.scene.render.resolution_y
@@ -409,7 +434,7 @@ class SpriteSheetMaker():
         # Pixelate Rendered image
         if param.to_pixelate:
             print(f"[SpriteSheetMaker {datetime.now()}] Pixelating sprite")
-            pixelate_image(param.output_file_path, param.pixelate_param)
+            pixelate_images({ param.output_file_path : param.output_file_path }, param.pixelate_param)
 
 
         # Delete camera after render
@@ -431,12 +456,18 @@ class SpriteSheetMaker():
         temp_dir = create_folder(os.path.dirname(param.output_file_path), TEMP_FOLDER_NAME)
 
 
+        # Store to pixelate
+        to_pixelate = param.sprite_param.to_pixelate
+        param.sprite_param.to_pixelate = False
+
+
         # Create camera
         if(param.sprite_param.camera is None):
             param.sprite_param.camera = setup_auto_camera(param.sprite_param.auto_capture_param, param.sprite_param.camera)
 
 
         # Iterate through actions and capture render for each frame (Each action should have it's own folder (in order) & image names should be 1, 2, 3 for each frame respectively)
+        pixelate_dict: dict[str, str] = {}
         for i, strip in enumerate(param.animation_strips):
 
             # Calculate frame range
@@ -511,6 +542,7 @@ class SpriteSheetMaker():
                 # Render a single sprite
                 param.sprite_param.output_file_path = f"{action_dir}/{frame}.{bpy.context.scene.render.image_settings.file_format.lower()}"
                 self.create_sprite(param.sprite_param)
+                pixelate_dict[param.sprite_param.output_file_path] = None
 
                 # Notify frame completed
                 self.on_sheet_frame_created.broadcast(strip.label, frame)
@@ -520,6 +552,11 @@ class SpriteSheetMaker():
             self.on_sheet_row_created.broadcast(strip.label, frame_end)
 
 
+        # pixelate all images if required
+        if(to_pixelate):
+            pixelate_images(pixelate_dict, param.sprite_param.pixelate_param)
+
+        
         # Combine images together into single file and paste in output
         param.assemble_param.input_folder_path = temp_dir
         param.assemble_param.output_file_path = param.output_file_path

@@ -10,7 +10,7 @@ import bpy
 import os
 from datetime import datetime
 from .modules.sprite_sheet_maker_utils import *
-from .modules.combine_frames import SpriteAlign, assemble_sprite_sheet
+from .modules.combine_frames import *
 from bpy.types import Panel, Operator, PropertyGroup, UIList
 from bpy.props import (
     StringProperty,
@@ -74,12 +74,21 @@ class SpriteSheetMakerStripInfo(bpy.types.PropertyGroup):
     frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574)
 
     def update_label_from_action(self):
-        if self.label.strip() != "":
-            return
+        # Iterate through all items
+        action_count = 0
+        new_label = ""
         for item in self.capture_items:
             if item.action:
-                self.label = item.action.name
+                new_label = item.action.name
+                action_count +=1
+            
+            if action_count > 1:
                 break
+        
+
+        # Assign new label if only 1 action or empty label
+        if(action_count <= 1 or self.label.strip() == ""):
+            self.label = new_label
 
 class SpriteSheetMakerProperties(PropertyGroup):
     # Camera settings
@@ -110,8 +119,7 @@ class SpriteSheetMakerProperties(PropertyGroup):
         items=[
             (ScaleInterpType.NEAREST.value, "Nearest", "Nearest"),
             (ScaleInterpType.BILINEAR.value, "Bilinear", "Bilinear"),
-            (ScaleInterpType.BICUBIC.value, "Bicubic", "Bicubic"),
-            (ScaleInterpType.ANISOTROPIC.value, "Anisotropic", "Anisotropic")
+            (ScaleInterpType.BICUBIC.value, "Bicubic", "Bicubic")
         ],
         default=ScaleInterpType.NEAREST.value
     )
@@ -177,9 +185,56 @@ class SPRITESHEETMAKER_UL_CaptureItems(bpy.types.UIList):
         col_action.prop(item, "action", text="")
         col_slot.prop(item, "slot", text="Slot")
 
+class SPRITESHEETMAKER_OT_duplicate_strip(bpy.types.Operator):
+    bl_idname = "spritesheetmaker.duplicate_strip"
+    bl_label = "Duplicate Strip"
+    bl_description = "Duplicate the selected animation strip"
+    bl_options = {'UNDO'}
+
+    def execute(self, context):
+        # Get essentials
+        scene = context.scene
+        strips = scene.animation_strips
+        idx = scene.strip_index
+
+
+        # Return if no strips exist
+        if idx < 0 or idx >= len(strips):
+            return bpy.ops.spritesheetmaker.add_strip()
+
+
+        # Store original strip
+        original_strip = strips[idx]
+
+
+        # Create new strip
+        new_strip = strips.add()
+        new_strip.label = original_strip.label
+        new_strip.capture_items.clear()
+        for item in original_strip.capture_items:
+            dst_item = new_strip.capture_items.add()
+            dst_item.object = item.object
+            dst_item.action = item.action
+            dst_item.slot = item.slot
+        new_strip.manual_frames = original_strip.manual_frames
+        new_strip.frame_start = original_strip.frame_start
+        new_strip.frame_end = original_strip.frame_end
+
+
+        # Set index of strip
+        new_index = len(strips) - 1
+        target_index = idx + 1
+        strips.move(new_index, target_index)
+        scene.strip_index = target_index
+
+
+        return {'FINISHED'}
+
 class SPRITESHEETMAKER_OT_add_strip(bpy.types.Operator):
     bl_idname = "spritesheetmaker.add_strip"
     bl_label = "Add Strip"
+    bl_description = "Add new animation strip"
+    bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
@@ -192,6 +247,8 @@ class SPRITESHEETMAKER_OT_add_strip(bpy.types.Operator):
 class SPRITESHEETMAKER_OT_remove_strip(bpy.types.Operator):
     bl_idname = "spritesheetmaker.remove_strip"
     bl_label = "Remove Strip"
+    bl_description = "Delete animation strip"
+    bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
@@ -205,6 +262,7 @@ class SPRITESHEETMAKER_OT_move_strip(bpy.types.Operator):
     bl_idname = "spritesheetmaker.move_strip"
     bl_label = "Move Strip"
     bl_description = "Move animation strip up or down"
+    bl_options = {'UNDO'}
 
     direction: EnumProperty(
         items=[
@@ -231,6 +289,8 @@ class SPRITESHEETMAKER_OT_move_strip(bpy.types.Operator):
 class SPRITESHEETMAKER_OT_add_capture_item(bpy.types.Operator):
     bl_idname = "spritesheetmaker.add_capture_item"
     bl_label = "Add Capture Item"
+    bl_description = "Add capture item"
+    bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
@@ -246,6 +306,8 @@ class SPRITESHEETMAKER_OT_add_capture_item(bpy.types.Operator):
 class SPRITESHEETMAKER_OT_remove_capture_item(bpy.types.Operator):
     bl_idname = "spritesheetmaker.remove_capture_item"
     bl_label = "Remove Capture Item"
+    bl_description = "Remove capture item"
+    bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
@@ -285,10 +347,11 @@ class SPRITESHEETMAKER_OT_PixelateImage(Operator):
             param = pixelate_param_from_props()
 
             # Pixelate the image
-            pixelate_image(props.pixelate_image_path, param, get_pixelated_img_path())
+            pixelated_output_path = get_pixelated_img_path()
+            pixelate_images({ props.pixelate_image_path:pixelated_output_path }, param)
 
             # Notify success
-            popup(f"Pixelated image successfully at {os.path.normpath(pixelated_image_path)}")
+            popup(f"Pixelated image successfully at {pixelated_output_path}")
         except Exception as e:
             popup("Error occurred while pixelating image! Make sure you have passed a valid image\nCheck console for more information")
             print(f"[SpriteSheetMaker {datetime.now()}] Failed to pixelate image: {e} \n {traceback.format_exc()}")
@@ -361,8 +424,16 @@ class SPRITESHEETMAKER_OT_CreateSingleSprite(bpy.types.Operator):
 
         # Create single sprite
         try:
+
+            # Create sprite
             param = sprite_param_from_props()
             SPRITE_SHEET_MAKER.create_sprite(param)
+
+            # Add image and margin
+            label_param = label_param_from_props()
+            add_label_to_image(param.output_file_path , label_param)
+
+
             popup(f"Created single sprite successfully at {os.path.normpath(param.output_file_path)}")
             return {'FINISHED'}
         except Exception as e:
@@ -485,13 +556,15 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
             "animation_strips",
             scene,
             "strip_index",
-            rows=3,
-            maxrows=3
+            rows=4,
+            maxrows=4
         )
 
 
         # Strips Add & Remove buttons
         ops = row.column(align=True)
+        ops.operator("spritesheetmaker.duplicate_strip", icon='DUPLICATE', text='')
+        ops.separator()
         ops.operator('spritesheetmaker.add_strip', icon='ADD', text='')
         ops.operator('spritesheetmaker.remove_strip', icon='REMOVE', text='')
 
@@ -677,6 +750,44 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
 
 
 # Param Methods
+def label_param_from_props():
+    # Get all props
+    props = bpy.context.scene.sprite_sheet_maker_props
+
+
+    # Get label text
+    label_text = ""
+    for strip_item in bpy.context.scene.animation_strips:
+        label_text = strip_item.label 
+    label_text = "Untitled" if label_text == "" else label_text
+
+
+    # Set font parameters
+    param = LabelParam()
+    param.text = label_text
+    param.font_size = props.label_font_size
+    param.margin = props.sprite_margin
+
+
+    return param
+
+def assemble_param_from_props():
+
+    # Get all props
+    props = bpy.context.scene.sprite_sheet_maker_props
+
+
+    # Set assemble parameters
+    param = AssembleParam()
+    param.input_folder_path = props.output_folder
+    param.output_file_path = get_sprite_sheet_path()
+    param.label_param = label_param_from_props()
+    param.consistency = SpriteConsistency(props.sprite_consistency)
+    param.align = SpriteAlign(props.sprite_align)
+
+
+    return param
+
 def auto_capture_param_from_props():
 
     # Get all props & scene
@@ -708,24 +819,6 @@ def pixelate_param_from_props():
     param.min_alpha = props.min_alpha
     param.alpha_step = props.alpha_step
     param.shrink_interp = ScaleInterpType(props.shrink_interp)  # Ensure shrink interpolation is properly set
-
-
-    return param
-
-def assemble_param_from_props():
-
-    # Get all props
-    props = bpy.context.scene.sprite_sheet_maker_props
-
-
-    # Set assemble parameters
-    param = AssembleParam()
-    param.input_folder_path = props.output_folder
-    param.output_file_path = get_sprite_sheet_path()
-    param.font_size = props.label_font_size
-    param.margin = props.sprite_margin
-    param.consistency = SpriteConsistency(props.sprite_consistency)
-    param.align = SpriteAlign(props.sprite_align)
 
 
     return param
@@ -799,14 +892,23 @@ def get_pixelated_img_path():
 
     # Get all props
     props = bpy.context.scene.sprite_sheet_maker_props
+    file_ext = bpy.context.scene.render.image_settings.file_format.lower()
 
 
     # Add postfix to the file name
     dir_name, file_name = os.path.split(props.pixelate_image_path)
     name, ext = os.path.splitext(file_name)
+    pixelated_output_path = os.path.join(dir_name, f"{name}_{PIXELATE_TEST_IMAGE_POSTFIX}.{file_ext}")
     
     
-    return os.path.join(dir_name, f"{name}_{PIXELATE_TEST_IMAGE_POSTFIX}{ext}")
+    # If file already exists then add numeric suffix
+    counter = 1
+    while os.path.exists(pixelated_output_path) and counter < 10000:
+        pixelated_output_path = os.path.join(dir_name, f"{name}_{PIXELATE_TEST_IMAGE_POSTFIX}_{counter}.{file_ext}")
+        counter += 1
+
+
+    return pixelated_output_path
 
 def get_sprite_sheet_path():
 
@@ -872,6 +974,7 @@ classes = (
     SpriteSheetMakerStripInfo,
     SPRITESHEETMAKER_UL_AnimationStrips,
     SPRITESHEETMAKER_UL_CaptureItems,
+    SPRITESHEETMAKER_OT_duplicate_strip,
     SPRITESHEETMAKER_OT_add_strip,
     SPRITESHEETMAKER_OT_remove_strip,
     SPRITESHEETMAKER_OT_move_strip,

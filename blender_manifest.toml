@@ -7,7 +7,7 @@ maintainer = "Manas R. Makde"
 type = "add-on"
 website = "https://github.com/ManasMakde/SpriteSheetMaker/"
 tags = ["Animation", "Render"]
-blender_version_min = "5.0.0"
+blender_version_min = "4.0.0"
 license = [
   "SPDX:GPL-3.0-or-later",
 ]
