@@ -19,7 +19,7 @@ from bpy.props import (
     PointerProperty,
     CollectionProperty,
     IntProperty,
-    EnumProperty,
+    EnumProperty
 )
 
 
@@ -111,7 +111,6 @@ class SpriteSheetMakerProperties(PropertyGroup):
     camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.05, min=0.0, soft_max=10.0)
     consider_armature_bones: BoolProperty(default=False)
 
-
     # Pixelation settings
     to_pixelate: BoolProperty(name="To Pixelate", default=False)
     pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0)
@@ -134,7 +133,12 @@ class SpriteSheetMakerProperties(PropertyGroup):
 
     # Output settings
     label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000)
-    sprite_margin: IntProperty(name="Sprite Margin", default=15, min=0, soft_max=1000)
+    surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000)
+    surrounding_margin_right: IntProperty(name="Surrounding Margin Right", default=15, min=0, soft_max=1000)
+    surrounding_margin_bottom: IntProperty(name="Surrounding Margin Bottom", default=15, min=0, soft_max=1000)
+    surrounding_margin_left: IntProperty(name="Surrounding Margin Left", default=15, min=0, soft_max=1000)
+    label_margin: IntProperty(name="Label Margin", default=15, min=0, soft_max=1000)
+    image_margin: IntProperty(name="Image Margin", default=15, min=0, soft_max=1000)
     sprite_consistency: EnumProperty(
         name="Sprite Align",
         items=[
@@ -744,8 +748,19 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
             # Label Font Size
             box.prop(props, "label_font_size", text="Label Font Size")
 
-            # Sprite Margin
-            box.prop(props, "sprite_margin", text="Sprite Margin")
+            # Surrounding Margins
+            box.label(text="Surrounding Margins")
+            row = box.row(align=True)  # Create a row layout
+            row.prop(props, "surrounding_margin_top", text="Top")
+            row.prop(props, "surrounding_margin_right", text="Right")
+            row.prop(props, "surrounding_margin_bottom", text="Bottom")
+            row.prop(props, "surrounding_margin_left", text="Left")
+
+            # Label Margin
+            box.prop(props, "label_margin", text="Label Margin")
+
+            # Image Margin
+            box.prop(props, "image_margin", text="Image Margin")
             
             # Sprite Consistency
             row = box.row()
@@ -755,14 +770,13 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
 
             # Sprite Align
             row = box.row()
-            split = row.split(factor=0.45)
+            split = row.split(factor=0.60)
             split.label(text="Sprite Align")
             split.prop(props, "sprite_align", text="")
 
-
             # Combine Mode
             row = box.row()
-            split = row.split(factor=0.45)
+            split = row.split(factor=0.60)
             split.label(text="Combine Mode")
             split.prop(props, "combine_mode", text="")
 
@@ -807,27 +821,6 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
 
 
 # Param Methods
-def label_param_from_props():
-    # Get all props
-    props = bpy.context.scene.sprite_sheet_maker_props
-
-
-    # Get label text
-    label_text = ""
-    for strip_item in bpy.context.scene.animation_strips:
-        label_text = strip_item.label 
-    label_text = "Untitled" if label_text == "" else label_text
-
-
-    # Set font parameters
-    param = LabelParam()
-    param.text = label_text
-    param.font_size = props.label_font_size
-    param.margin = props.sprite_margin
-
-
-    return param
-
 def assemble_param_from_props():
 
     # Get all props
@@ -846,7 +839,9 @@ def assemble_param_from_props():
         param.output_path = get_sprite_images_path()
 
     param.font_size = props.label_font_size
-    param.margin = props.sprite_margin
+    param.surrounding_margin = (props.surrounding_margin_top, props.surrounding_margin_right, props.surrounding_margin_bottom, props.surrounding_margin_left)
+    param.label_margin = props.label_margin
+    param.image_margin = props.image_margin
     param.consistency = SpriteConsistency(props.sprite_consistency)
     param.align = SpriteAlign(props.sprite_align)
     param.combine_mode = CombineMode(props.combine_mode)

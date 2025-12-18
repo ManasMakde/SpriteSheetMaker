@@ -49,7 +49,9 @@ class AssembleParam:
         self.input_folder_path:str = ""
         self.output_path:str = ""  # file path if combine_mode is sheet otherwise folder path
         self.font_size:int = 24
-        self.margin:int = 15
+        self.surrounding_margin:int = (15, 15, 15, 15)  # top, right, bottom, left
+        self.label_margin:int = 15
+        self.image_margin:int = 15
         self.consistency:SpriteConsistency = SpriteConsistency.INDIVIDUAL
         self.align:SpriteAlign = SpriteAlign.BOTTOM_CENTER
         self.combine_mode:CombineMode = CombineMode.SHEET
@@ -180,35 +182,45 @@ def assemble_images(param:AssembleParam):
 
 def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int):
 
-
     # Extract from param
-    margin = param.margin
+    surrounding_margin = param.surrounding_margin
+    label_margin = param.label_margin
+    image_margin = param.image_margin
     font_size = param.font_size
 
 
     # Calculate sheet dimensions based on sprite consistency
     sheet_width = 0
     sheet_height = 0
-    for row_data in rows:
+    for row_count, row_data in enumerate(rows):
+
+        # Calculate row height & width
         img_count = len(row_data.images)
-        gaps = margin * (img_count - 1)
+        gaps = image_margin * (img_count - 1)
         if(param.consistency == SpriteConsistency.INDIVIDUAL):
-            row_width = row_data.img_accum_width + margin + gaps
-            img_height = row_data.img_tallest
+            row_width = row_data.img_accum_width + gaps
+            row_height = row_data.img_tallest
         elif(param.consistency == SpriteConsistency.ROW):
-            row_width = (row_data.img_widest * img_count) + margin + gaps
-            img_height = row_data.img_tallest
+            row_width = (row_data.img_widest * img_count) + gaps
+            row_height = row_data.img_tallest
         elif(param.consistency == SpriteConsistency.ALL):
-            row_width = (global_img_widest * img_count)  + margin + gaps
-            img_height = global_img_tallest
+            row_width = (global_img_widest * img_count) + gaps
+            row_height = global_img_tallest
 
+
+        # Add to height & width
         sheet_width = max(sheet_width, row_width, row_data.label_width)
-        sheet_height += row_data.label_height + margin + img_height
+        sheet_height += row_height + ((row_data.label_height + label_margin) if font_size!=0 else 0)
 
-    
+
+        # Additional top label margin 
+        if(row_count != 0 and font_size != 0):
+            sheet_height += label_margin
+
+
     # Add margins to sheet dimensions
-    sheet_width += margin * 2
-    sheet_height += margin * 2
+    sheet_width += surrounding_margin[1] + surrounding_margin[3]
+    sheet_height += surrounding_margin[0] + surrounding_margin[2]
 
 
     # Create sheet
@@ -221,11 +233,11 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
 
 
     # Paste labels & images into sheet
-    paste_height = margin
+    paste_height = surrounding_margin[0]
     for row_data in rows:
 
         # Reset paste width
-        paste_width = margin
+        paste_width = surrounding_margin[3]
 
 
         # Paste label
@@ -233,7 +245,7 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
             label_location_x = paste_width + row_data.label_offset[0]
             label_location_y = paste_height + row_data.label_offset[1]
             draw.text((label_location_x, label_location_y), row_data.label_text, fill="white", font=font, spacing = 0)
-            paste_height += row_data.label_height + margin
+            paste_height += row_data.label_height + label_margin
             print(f"[SpriteSheetMaker {datetime.now()}] Addded label '{row_data.label_text}' at ({label_location_x},{label_location_y})")
 
 
@@ -256,17 +268,17 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
             img_location_x = paste_width + offset_x
             img_location_y = paste_height + offset_y
             sheet.paste(img, (int(img_location_x), int(img_location_y)))
-            paste_width += large_width + margin
+            paste_width += large_width + image_margin
             print(f"[SpriteSheetMaker {datetime.now()}] Addded image of frame {i + 1} at ({img_location_x},{img_location_y})")
         
 
         # Increase paste height
         if(param.consistency == SpriteConsistency.INDIVIDUAL):
-            paste_height += row_data.img_tallest + margin
+            paste_height += row_data.img_tallest + label_margin
         elif(param.consistency == SpriteConsistency.ROW):
-            paste_height += row_data.img_tallest + margin
+            paste_height += row_data.img_tallest + label_margin
         elif(param.consistency == SpriteConsistency.ALL):
-            paste_height += global_img_tallest + margin
+            paste_height += global_img_tallest + label_margin
         
 
     # Save the final output sprite sheet
@@ -277,7 +289,12 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
 def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int):
     
     # Extract from param
-    margin = param.margin
+    surrounding_margin_top = param.surrounding_margin[0]
+    surrounding_margin_right = param.surrounding_margin[1]
+    surrounding_margin_bottom = param.surrounding_margin[2]
+    surrounding_margin_left = param.surrounding_margin[3]
+    label_margin = param.label_margin
+    image_margin = param.image_margin
     font_size = param.font_size
 
 
@@ -290,24 +307,24 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
     # Iterate and create strips
-    for row_data in rows:
+    for row_count, row_data in enumerate(rows):
         img_count = len(row_data.images)
-        gaps = margin * (img_count - 1)
+        gaps = image_margin * (img_count - 1)
         if(param.consistency == SpriteConsistency.INDIVIDUAL):
-            row_width = row_data.img_accum_width + margin * gaps
+            row_width = row_data.img_accum_width + gaps
             img_height = row_data.img_tallest
         elif(param.consistency == SpriteConsistency.ROW):
-            row_width = row_data.img_widest * img_count + margin * gaps
+            row_width = row_data.img_widest * img_count + gaps
             img_height = row_data.img_tallest
         elif(param.consistency == SpriteConsistency.ALL):
-            row_width = global_img_widest * img_count  + margin * gaps
+            row_width = global_img_widest * img_count + gaps
             img_height = global_img_tallest
+
     
-        
         # Assign strip height & width
-        strip_width = margin + max(row_width, row_data.label_width) + margin 
-        strip_height = margin + row_data.label_height + margin + img_height + margin
-        
+        strip_width = surrounding_margin_left + max(row_width, row_data.label_width) + surrounding_margin_right
+        strip_height = surrounding_margin_top + row_data.label_height + label_margin + img_height + surrounding_margin_bottom
+
 
         # Create strip
         print(f"[SpriteSheetMaker {datetime.now()}] Creating strip {strip_width}x{strip_height}")
@@ -317,16 +334,16 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
         # Paste label
-        paste_height = margin
+        paste_height = surrounding_margin_top
         if(font_size != 0):
-            label_location_x = margin + row_data.label_offset[0]
-            label_location_y = row_data.label_offset[1]
+            label_location_x = surrounding_margin_left + row_data.label_offset[0]
+            label_location_y = surrounding_margin_top + row_data.label_offset[1]
             draw.text((label_location_x, label_location_y), row_data.label_text, fill="white", font=font, spacing = 0)
-            paste_height += row_data.label_height + margin
+            paste_height += row_data.label_height + label_margin
 
 
         # Paste images
-        paste_width = margin
+        paste_width = surrounding_margin_left
         for img in row_data.images:
             
             # Get cell size
@@ -345,7 +362,7 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
             img_location_x = paste_width + offset_x
             img_location_y = paste_height + offset_y
             strip.paste(img, (int(img_location_x), int(img_location_y)))
-            paste_width += large_width + margin
+            paste_width += large_width + image_margin
 
 
         # Save strip
@@ -358,7 +375,10 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int):
     
     # Extract from param
-    margin = param.margin
+    surrounding_margin_top = param.surrounding_margin[0]
+    surrounding_margin_right = param.surrounding_margin[1]
+    surrounding_margin_bottom = param.surrounding_margin[2]
+    surrounding_margin_left = param.surrounding_margin[3]
     font_size = param.font_size
 
 
@@ -391,8 +411,8 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
             
 
             # Add margins
-            new_img_width = large_width + margin * 2
-            new_img_height = large_height + margin * 2
+            new_img_width = surrounding_margin_left + large_width + surrounding_margin_right
+            new_img_height = surrounding_margin_top + large_height + surrounding_margin_bottom
 
 
             # Create new image
@@ -406,7 +426,7 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
             # Paste image
-            new_img.paste(img, (int(offset_x), int(offset_y)))
+            new_img.paste(img, (int(offset_x + surrounding_margin_left), int(offset_y + surrounding_margin_top)))
 
 
             # Save new image
