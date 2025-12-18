@@ -7,7 +7,7 @@ import math
 from datetime import datetime
 from mathutils import Vector
 from enum import Enum
-from .combine_frames import SpriteConsistency, SpriteAlign, AssembleParam, assemble_sprite_sheet
+from .combine_frames import AssembleParam, assemble_images, create_folder, unique_path
 
 
 TEMP_FOLDER_NAME = "SpriteSheetMakerTemp"
@@ -24,6 +24,22 @@ ALPHA_STEP_NODE = "AlphaStep"
 UNTITLED_FOLDER_NAME = "Untitled"
 
 
+# Enums
+class CameraDirection(Enum):
+    X = "x"
+    Y = "y"
+    Z = "z"
+    NEG_X = "-x"
+    NEG_Y = "-y"
+    NEG_Z = "-z"
+
+class ScaleInterpType(Enum):
+    NEAREST = "NEAREST"
+    BILINEAR = "BILINEAR"
+    BICUBIC = "BICUBIC"
+
+
+# Classes
 class Event:
     def __init__(self):
         self._subscribers = weakref.WeakSet()
@@ -38,54 +54,46 @@ class Event:
         for func in list(self._subscribers):
             func(*args, **kwargs)
 
-class CameraDirection(Enum):
-    X = "x"
-    Y = "y"
-    Z = "z"
-    NEG_X = "-x"
-    NEG_Y = "-y"
-    NEG_Z = "-z"
+class AutoCaptureParam:
+    def __init__(self):
+        self.objects:set = set({})
+        self.consider_armature_bones:bool = False
+        self.camera_direction:CameraDirection = CameraDirection.NEG_X
+        self.pixels_per_meter:int = 500
+        self.camera_padding:float = 0.05
 
-class ScaleInterpType(Enum):
-    NEAREST = "NEAREST"
-    BILINEAR = "BILINEAR"
-    BICUBIC = "BICUBIC"
+class PixelateParam:
+    def __init__(self):
+        self.pixelation_amount:float = 0.9
+        self.color_amount:float = 50.0
+        self.min_alpha:float = 0.0
+        self.alpha_step:float = 0.25  # Ensures alpha of color is rounded down to the nearest multiple of "step" (helps reducing gradients)
+        self.shrink_interp:ScaleInterpType = ScaleInterpType.NEAREST
 
-class AutoCaptureParam():
-    objects:set = set({})
-    consider_armature_bones:bool = False
-    camera_direction: CameraDirection = CameraDirection.NEG_X
-    pixels_per_meter: int = 500
-    camera_padding: float = 0.05
+class SpriteParam:
+    def __init__(self):
+        self.output_file_path:str = ""
+        self.camera = None
+        self.to_auto_capture = False
+        self.auto_capture_param = AutoCaptureParam()
+        self.to_pixelate:bool = False
+        self.pixelate_param:PixelateParam = PixelateParam()
 
-class PixelateParam():
-    pixelation_amount: float = 0.9
-    color_amount: float = 50.0
-    min_alpha: float = 0.0
-    alpha_step: float = 0.25  # Ensures alpha of color is rounded down to the nearest multiple of "step" (helps reducing gradients)
-    shrink_interp:ScaleInterpType = ScaleInterpType.NEAREST
+class StripParam:
+    def __init__(self):
+        self.label:str = ""
+        self.capture_items = []  # [(Object, Action, Slot), ... ]
+        self.manual_frames:bool = False
+        self.frame_start:int = 0
+        self.frame_end:int = 250
 
-class SpriteParam():
-    output_file_path: str = ""
-    camera = None
-    to_auto_capture = False
-    auto_capture_param = AutoCaptureParam()
-    to_pixelate: bool = False
-    pixelate_param: PixelateParam = PixelateParam()
+class SpriteSheetParam:
+    def __init__(self):
+        self.animation_strips:list[StripParam] = [] 
+        self.delete_temp_folder:bool = True
+        self.sprite_param :SpriteParam = SpriteParam()
+        self.assemble_param:AssembleParam = AssembleParam()
 
-class StripParam():
-    label: str = ""
-    capture_items = []  # [(Object, Action, Slot), ... ]
-    manual_frames:bool = False
-    frame_start:int = 0
-    frame_end:int = 250
-
-class SpriteSheetParam():
-    animation_strips: list[StripParam] = [] 
-    output_file_path: str = ""
-    delete_temp_folder: bool = True
-    sprite_param : SpriteParam = SpriteParam()
-    assemble_param: AssembleParam = AssembleParam()
 
 def get_bounding_box(objects, ignore_armatures = True):
 
@@ -134,7 +142,7 @@ def get_bounding_box(objects, ignore_armatures = True):
 
     return min_corner, max_corner
 
-def extend_bounding_box(bounding_box: tuple[Vector, Vector], extend_by):
+def extend_bounding_box(bounding_box:tuple[Vector, Vector], extend_by):
 
     # Get corners of bounding box
     min_corner, max_corner = bounding_box
@@ -151,7 +159,7 @@ def extend_bounding_box(bounding_box: tuple[Vector, Vector], extend_by):
 
     return extended_min_corner, extended_max_corner
 
-def setup_auto_camera(param: AutoCaptureParam, existing_camera = None):
+def setup_auto_camera(param:AutoCaptureParam, existing_camera = None):
 
     # Get & extend bounding box
     bbox = get_bounding_box(param.objects, not param.consider_armature_bones)
@@ -246,7 +254,7 @@ def delete_auto_camera():
     if cam_obj is not None:
         bpy.data.objects.remove(cam_obj, do_unlink=True) 
 
-def render(output_file_path: str):
+def render(output_file_path:str):
 
     # Set Output File Location
     bpy.context.scene.render.filepath = output_file_path
@@ -254,7 +262,7 @@ def render(output_file_path: str):
     # Start Render
     bpy.ops.render.render(write_still=True)
 
-def pixelate_images(image_paths: dict[str, str], param: PixelateParam):  # images = { "input/path/to/image.png" : "output/path/to/images.png" }
+def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images = { "input/path/to/image.png" : "output/path/to/images.png" }
 
     # if pixelate compositor does not exist then import from sprit maker blend file
     if PIXELATE_COMPOSITOR_NAME not in bpy.data.node_groups:
@@ -362,6 +370,9 @@ def pixelate_images(image_paths: dict[str, str], param: PixelateParam):  # image
             # Render pixelated version
             print(f"[SpriteSheetMaker {datetime.now()}] Rendering pixelated sprite")
             bpy.ops.render.render(scene=pixel_scene.name, write_still=True)
+
+            # Unload image from memory
+            bpy.data.images.remove(image)
     except Exception as e:
         exception = e
         print(f"[SpriteSheetMaker {datetime.now()}] Failed to pixelate image: {e} \n {traceback.format_exc()}")
@@ -376,26 +387,6 @@ def pixelate_images(image_paths: dict[str, str], param: PixelateParam):  # image
     if(exception != None):
         raise exception
 
-def create_folder(at_path, folder_name):
-
-    # Make sure the name is safe for folder creation
-    folder_name = bpy.path.clean_name(folder_name)
-    folder_path = os.path.join(at_path, folder_name)
-
-
-    # If folder exists then add numeric suffix
-    counter = 1
-    while os.path.exists(folder_path) and counter < 10000:
-        new_name = f"{folder_name}_{counter}"
-        folder_path = os.path.join(at_path, new_name)
-        counter += 1
-
-
-    # Create folder
-    os.makedirs(folder_path)
-
-    return folder_path
-
 class SpriteSheetMaker():
     def __init__(self):
         self.on_sprite_creating = Event()  # param
@@ -405,7 +396,7 @@ class SpriteSheetMaker():
         self.on_sheet_frame_creating = Event()  # strip_label, frame
         self.on_sheet_frame_created = Event()   # strip_label, frame
     
-    def create_sprite(self, param: SpriteParam):
+    def create_sprite(self, param:SpriteParam):
 
         self.on_sprite_creating.broadcast(param)
 
@@ -449,11 +440,11 @@ class SpriteSheetMaker():
 
         self.on_sprite_created.broadcast(param)
     
-    def create_sprite_sheet(self, param: SpriteSheetParam):
+    def create_sprite_sheet(self, param:SpriteSheetParam):
         
         # Create temp folder
         print(f"[SpriteSheetMaker {datetime.now()}] Creating temp folder '{TEMP_FOLDER_NAME}'")
-        temp_dir = create_folder(os.path.dirname(param.output_file_path), TEMP_FOLDER_NAME)
+        temp_dir = create_folder(os.path.dirname(param.assemble_param.output_path), TEMP_FOLDER_NAME)
 
 
         # Store to pixelate
@@ -467,7 +458,7 @@ class SpriteSheetMaker():
 
 
         # Iterate through actions and capture render for each frame (Each action should have it's own folder (in order) & image names should be 1, 2, 3 for each frame respectively)
-        pixelate_dict: dict[str, str] = {}
+        pixelate_dict:dict[str, str] = {}
         for i, strip in enumerate(param.animation_strips):
 
             # Calculate frame range
@@ -559,8 +550,7 @@ class SpriteSheetMaker():
         
         # Combine images together into single file and paste in output
         param.assemble_param.input_folder_path = temp_dir
-        param.assemble_param.output_file_path = param.output_file_path
-        assemble_sprite_sheet(param.assemble_param)
+        assemble_images(param.assemble_param)
 
 
         # Delete temp folder
