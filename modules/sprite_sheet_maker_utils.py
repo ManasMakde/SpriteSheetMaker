@@ -95,6 +95,7 @@ class SpriteSheetParam:
         self.assemble_param:AssembleParam = AssembleParam()
 
 
+# Methods
 def get_bounding_box(objects, ignore_armatures = True):
 
     # Return if no objects

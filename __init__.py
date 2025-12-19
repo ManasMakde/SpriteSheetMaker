@@ -30,6 +30,7 @@ SPRITE_SHEET_NAME = "sprite_sheet"
 DEFAULT_OUTPUT_FOLDER_NAME = "SpriteSheetMaker"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_STRIP_NAME = "<Untitled>"
+UNTITLED_LABEL_TEXT = "Untitled"
 
 
 # Classes
@@ -472,9 +473,8 @@ class SPRITESHEETMAKER_OT_CreateSingleSprite(bpy.types.Operator):
             SPRITE_SHEET_MAKER.create_sprite(param)
 
             # Add image and margin
-            label_param = label_param_from_props()
-            add_label_to_image(param.output_file_path , label_param)
-
+            assemble_param = assemble_param_from_props()
+            add_label_to_image(param.output_file_path, get_label_text(), assemble_param)
 
             popup(f"Created single sprite successfully at {os.path.normpath(param.output_file_path)}")
             return {'FINISHED'}
@@ -947,6 +947,15 @@ def sprite_sheet_param_from_props():
 
 
 # Helper Methods
+def get_label_text():
+
+    # Get the label text of the first strip 
+    scene = bpy.context.scene
+    for strip_item in scene.animation_strips:
+        return strip_item.label
+    
+    return UNTITLED_LABEL_TEXT
+
 def get_pixelated_img_path():
 
     # Get all props

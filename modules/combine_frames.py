@@ -58,6 +58,61 @@ class AssembleParam:
 
 
 # Methods
+def add_label_to_image(img_path:str, label_text:str, param:AssembleParam):
+    
+    # Extract from param
+    font_size = param.font_size
+    label_margin = param.label_margin
+    surrounding_margin_top = param.surrounding_margin[0]
+    surrounding_margin_right = param.surrounding_margin[1]
+    surrounding_margin_bottom = param.surrounding_margin[2]
+    surrounding_margin_left = param.surrounding_margin[3]
+
+
+    # Get original image
+    img = Image.open(img_path)
+
+
+    # Get dimensions for new image
+    new_img_width = img.width
+    new_img_height = img.height
+    font = ImageFont.load_default(font_size) if font_size !=0 else None
+    if(font_size != 0):
+        label_bbox = font.getbbox(label_text)
+        label_width = (label_bbox[2] - label_bbox[0])
+        label_height = (label_bbox[3] - label_bbox[1])
+        new_img_width = max(new_img_width, label_width)
+        new_img_height += label_height + label_margin
+    
+
+    # Add surrounding margins
+    new_img_width += surrounding_margin_left + surrounding_margin_right
+    new_img_height += surrounding_margin_top + surrounding_margin_bottom
+
+
+    # Create new image
+    new_img = Image.new(img.mode, (int(new_img_width), int(new_img_height)))
+    draw = ImageDraw.Draw(new_img)
+
+
+    # Paste label
+    label_top_offset = 0
+    if(font_size != 0):
+        label_location_x = surrounding_margin_left 
+        label_location_y = surrounding_margin_top - label_bbox[1]
+        draw.text((label_location_x, label_location_y), label_text, fill="white", font=font, spacing = 0)
+        label_top_offset = surrounding_margin_top + label_height + label_margin
+    
+
+    # Paste original image
+    img_location_x = surrounding_margin_left
+    img_location_y = label_top_offset
+    new_img.paste(img, (int(img_location_x), int(img_location_y)))
+
+
+    # Save original image
+    new_img.save(img_path)
+
 def unique_path(target_path:str, is_file:bool=False, count_limit:int = 100000):
 
     # Return if path already exists
