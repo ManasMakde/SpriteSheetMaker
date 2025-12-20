@@ -115,15 +115,6 @@ class SpriteSheetMakerProperties(PropertyGroup):
     # Pixelation settings
     to_pixelate: BoolProperty(name="To Pixelate", default=False)
     pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0)
-    shrink_interp: EnumProperty(
-        name="Shrink Interpolation",
-        items=[
-            (ScaleInterpType.NEAREST.value, "Nearest", "Nearest"),
-            (ScaleInterpType.BILINEAR.value, "Bilinear", "Bilinear"),
-            (ScaleInterpType.BICUBIC.value, "Bicubic", "Bicubic")
-        ],
-        default=ScaleInterpType.NEAREST.value
-    )
     color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000)
     min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.0)
     alpha_step: FloatProperty(name="Alpha Step", default=0.001, min=0.0, max=1.0)
@@ -721,12 +712,6 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
 
                 # Alpha Step
                 box.prop(props, "alpha_step", text="Alpha Step")
-                
-                # Shrink Interp
-                row = box.row()
-                split = row.split(factor=0.40)
-                split.label(text="Shrink Interp")
-                split.prop(props, "shrink_interp", text="")
 
                 # Test Image
                 row = box.row()
@@ -878,7 +863,6 @@ def pixelate_param_from_props():
     param.color_amount = props.color_amount
     param.min_alpha = props.min_alpha
     param.alpha_step = props.alpha_step
-    param.shrink_interp = ScaleInterpType(props.shrink_interp)  # Ensure shrink interpolation is properly set
 
 
     return param

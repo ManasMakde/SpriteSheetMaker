@@ -13,7 +13,6 @@ from .combine_frames import AssembleParam, assemble_images, create_folder, uniqu
 TEMP_FOLDER_NAME = "SpriteSheetMakerTemp"
 CAMERA_NAME = "SpriteSheetMakerCamera"
 PIXELATE_SCENE_NAME = "SpriteSheetMakerPixelateScene"
-PIXELATE_COMPOSITOR_NAME = "SpriteSheetMakerPixelate"
 SPRITE_SHEET_MAKER_BLEND_FILE = "../blend_files/SpriteSheetMaker.blend"
 IMAGE_INPUT_NODE = "ImageInput"
 PIXELATION_AMOUNT_NODE = "PixelationAmount"
@@ -32,11 +31,6 @@ class CameraDirection(Enum):
     NEG_X = "-x"
     NEG_Y = "-y"
     NEG_Z = "-z"
-
-class ScaleInterpType(Enum):
-    NEAREST = "NEAREST"
-    BILINEAR = "BILINEAR"
-    BICUBIC = "BICUBIC"
 
 
 # Classes
@@ -68,7 +62,6 @@ class PixelateParam:
         self.color_amount:float = 50.0
         self.min_alpha:float = 0.0
         self.alpha_step:float = 0.25  # Ensures alpha of color is rounded down to the nearest multiple of "step" (helps reducing gradients)
-        self.shrink_interp:ScaleInterpType = ScaleInterpType.NEAREST
 
 class SpriteParam:
     def __init__(self):
@@ -264,116 +257,116 @@ def render(output_file_path:str):
     bpy.ops.render.render(write_still=True)
 
 def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images = { "input/path/to/image.png" : "output/path/to/images.png" }
+    
+    # Get pixelate scene
+    pixelate_scene = bpy.data.scenes.get(PIXELATE_SCENE_NAME)
 
-    # if pixelate compositor does not exist then import from sprit maker blend file
-    if PIXELATE_COMPOSITOR_NAME not in bpy.data.node_groups:
-        
-        # Get absolute path to blend file
-        current_file_path = os.path.abspath(__file__)
-        current_dir = os.path.dirname(current_file_path)
-        blend_file_path = sibling_file_path = os.path.join(current_dir, SPRITE_SHEET_MAKER_BLEND_FILE)
+
+    # If pixelate scene does not exist then import from blender file
+    if not pixelate_scene:
 
         # Check if blend file exists
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        blend_file_path = os.path.join(current_dir, SPRITE_SHEET_MAKER_BLEND_FILE)
         if not os.path.exists(blend_file_path):
-            print(f"[SpriteSheetMaker {datetime.now()}] Blend file for importing compositor not found: {blend_file_path}")
+            raise Exception(f"[SpriteSheetMaker {datetime.now()}] Blend file for importing pixelate scene not found: {blend_file_path}")
             return
-        
-        # Append the node tree from the external blend file
+
+
+        # Import pixelate scene
         with bpy.data.libraries.load(blend_file_path, link=False) as (data_from, data_to):
-            if PIXELATE_COMPOSITOR_NAME in data_from.node_groups:
-                print(f"[SpriteSheetMaker {datetime.now()}] Importing node group '{PIXELATE_COMPOSITOR_NAME}' from '{blend_file_path}'")
-                data_to.node_groups = [PIXELATE_COMPOSITOR_NAME]
-            else:
-                print(f"[SpriteSheetMaker {datetime.now()}] Node group '{PIXELATE_COMPOSITOR_NAME}' not found in {blend_file_path}")
+            if PIXELATE_SCENE_NAME in data_from.scenes:  # If scene found
+                print(f"[SpriteSheetMaker {datetime.now()}] Importing scene '{PIXELATE_SCENE_NAME}' from '{blend_file_path}'")
+                data_to.scenes = [PIXELATE_SCENE_NAME]
+            else:  # If scene not found
+                raise Exception(f"[SpriteSheetMaker {datetime.now()}] scene '{PIXELATE_SCENE_NAME}' not found in {blend_file_path}")
                 return
+
+
+        # return If still no pixelate scene exists 
+        pixelate_scene = data_to.scenes[0]
+        if not pixelate_scene:
+            raise Exception(f"[SpriteSheetMaker {datetime.now()}] scene '{PIXELATE_SCENE_NAME}' is invalid!")
+            return
     
-
-    # Get compositor & make sure it's a compositor node tree
-    pixelate_group = bpy.data.node_groups[PIXELATE_COMPOSITOR_NAME]
-    if pixelate_group.bl_idname != "CompositorNodeTree":
-        print(f"[SpriteSheetMaker {datetime.now()}] '{PIXELATE_COMPOSITOR_NAME}' is not a CompositorNodeTree!")
-        return
-
-
-    # Save old values
+    
+    # Save old scene
     original_scene = bpy.context.scene
 
 
-    # Create temp scene
-    pixel_scene = bpy.data.scenes.new(PIXELATE_SCENE_NAME)
-    bpy.context.window.scene = pixel_scene
-    pixel_scene.use_nodes = True
+    # Set pixelate scene as active
+    bpy.context.window.scene = pixelate_scene
+    pixelate_scene.use_nodes = True
 
 
     # Intentionally kept inside try so that temp scene is deleted even incase of failure
     exception = None
     try:
         # Remove and existing nodes from compositor
-        tree = pixel_scene.node_tree
-        tree.nodes.clear()
-
-
-        # Create a new node group & connect it with "Composite" node
-        group_node = tree.nodes.new("CompositorNodeGroup")
-        group_node.node_tree = pixelate_group
-        composite_node = tree.nodes.new("CompositorNodeComposite")
-        tree.links.new(group_node.outputs[0], composite_node.inputs[0])
-
+        tree = pixelate_scene.node_tree
+       
 
         # Assign pixelation amount
-        pixel_node = pixelate_group.nodes.get(PIXELATION_AMOUNT_NODE)
+        pixel_node = tree.nodes.get(PIXELATION_AMOUNT_NODE)
         if pixel_node is not None:
             pixel_node.outputs[0].default_value = (1.0 - param.pixelation_amount)
 
 
-        # Assign shrink interpolation
-        shrink_scale_node = pixelate_group.nodes.get(SHRINK_SCALE_NODE)
-        if shrink_scale_node is not None:
-            shrink_scale_node.interpolation = param.shrink_interp.value
-
-
         # Assign color amount
-        color_amount_node = pixelate_group.nodes.get(COLOR_AMOUNT_NODE)
+        color_amount_node = tree.nodes.get(COLOR_AMOUNT_NODE)
         if color_amount_node is not None:
             color_amount_node.outputs[0].default_value = param.color_amount
 
 
         # Assign minimum alpha
-        min_alpha_node = pixelate_group.nodes.get(MIN_ALPHA_NODE)
+        min_alpha_node = tree.nodes.get(MIN_ALPHA_NODE)
         if min_alpha_node is not None:
             min_alpha_node.outputs[0].default_value = param.min_alpha
 
 
         # Assign alpha step
-        alpha_step_node = pixelate_group.nodes.get(ALPHA_STEP_NODE)
+        alpha_step_node = tree.nodes.get(ALPHA_STEP_NODE)
         if alpha_step_node is not None:
             alpha_step_node.outputs[0].default_value = param.alpha_step
 
 
+        # Get image input node
+        image_node = tree.nodes.get(IMAGE_INPUT_NODE)
+        if image_node is None:
+            raise Exception(f"[SpriteSheetMaker {datetime.now()}] Failed to find '{IMAGE_INPUT_NODE}' node")
+
+
         # Iterate through all images & render pixelated version
-        image_node = pixelate_group.nodes.get(IMAGE_INPUT_NODE)
         for input_path in image_paths:
+            print(f"[SpriteSheetMaker {datetime.now()}] Pixelating '{input_path}'")
+
+            # Skip if image not found
+            image = bpy.data.images.load(input_path)
+            if image is None:
+                print(f"[SpriteSheetMaker {datetime.now()}] Failed to load image '{input_path}'")
+                continue
 
             # Assign image to pixelate
-            image = bpy.data.images.load(input_path)
-            if image_node is not None:
-                image_node.image = image
-
+            image_node.image = image
+            
             # Assign Render settings
             width, height = image.size
-            pixel_scene.render.resolution_x = int(width * (1.0 - param.pixelation_amount))
-            pixel_scene.render.resolution_y = int(height * (1.0 - param.pixelation_amount))
+            pixelate_scene.render.resolution_x = int(width * (1.0 - param.pixelation_amount))
+            pixelate_scene.render.resolution_y = int(height * (1.0 - param.pixelation_amount))
 
             # Assign output path
             output_path = image_paths[input_path]
-            pixel_scene.render.filepath = (output_path if (output_path != "" and output_path != None) else input_path)  # Override existing if no output path is given
+            pixelate_scene.render.filepath = (output_path if (output_path != "" and output_path != None) else input_path)  # Override existing if no output path is given
             
             # Render pixelated version
             print(f"[SpriteSheetMaker {datetime.now()}] Rendering pixelated sprite")
-            bpy.ops.render.render(scene=pixel_scene.name, write_still=True)
+            bpy.ops.render.render(scene=pixelate_scene.name, write_still=True)
 
             # Unload image from memory
-            bpy.data.images.remove(image)
+            # bpy.data.images.remove(image)
+
+            print(f"[SpriteSheetMaker {datetime.now()}] Pixelated to '{output_path}'")
+
     except Exception as e:
         exception = e
         print(f"[SpriteSheetMaker {datetime.now()}] Failed to pixelate image: {e} \n {traceback.format_exc()}")
@@ -381,7 +374,7 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
 
     # Set back old values
     bpy.context.window.scene = original_scene
-    bpy.data.scenes.remove(pixel_scene)
+    # bpy.data.scenes.remove(pixelate_scene)
 
 
     # Throw exception incase of failure
@@ -425,7 +418,6 @@ class SpriteSheetMaker():
         
         # Pixelate Rendered image
         if param.to_pixelate:
-            print(f"[SpriteSheetMaker {datetime.now()}] Pixelating sprite")
             pixelate_images({ param.output_file_path : param.output_file_path }, param.pixelate_param)
 
 
