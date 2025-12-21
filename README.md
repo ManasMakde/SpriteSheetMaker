@@ -19,14 +19,15 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
 3. Labeling for each strip
 4. Allows single sprite creation
 5. In-built pixelation tool
-6. Recontinuing in case of failure  
-
+6. Options for combining into sheet, strips or images
+7. Maintains sprite dimension consistency
+8. Recontinuing in case of failure  
 
 
 ## 🛠️ How to install?
-1. Download this repo as .zip file (or download from [releases](https://github.com/ManasMakde/SpriteSheetMaker/releases/))
-2. Go to _Edit -> Preferences -> Add-ons -> Install from Disk_ and select the .zip file (make sure it's enabled once installed)
-3. If the installation was successful you should now see the panel changed as such:
+1. Download the plugin from [releases](https://github.com/ManasMakde/SpriteSheetMaker/releases/) or official [blender extension](https://extensions.blender.org/add-ons/sprite-sheet-maker/) site
+2. If installed from releases, Go to _Edit -> Preferences -> Add-ons -> Install from Disk_ and select the .zip file (make sure it's enabled once installed)
+3. If the installation was successful you should now see the panel as such:
 
    ![Sidebar screenshot](images/sidebar_screenshot.png)  
 
@@ -34,13 +35,17 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
 
 ## 📖 Terminology  
 ![Sprite Sheet Anatomy](images/sprite_sheet_anatomy.png)  
+![Sprite Sheet Margins](images/sprite_sheet_margins.png)  
 
 
 ## 🧭 Usage
 1. **Animation Strips:**   
    ![Animation Strips screenshot](images/animation_strips_screenshot.png)   
 
-   Each one of these represent a row within a sprite sheet, You can add or remove them using the + and - buttons on the side, You can reorder them using the arrow ▲ and ▼ buttons on the side.
+   Each one of these represent a row within a sprite sheet  
+   You can duplicate by using the <img src="images/duplicate_button.png"/> button  
+   You can add or remove them using the + and - buttons on the side  
+   You can reorder them using the arrow ▲ and ▼ buttons on the side.
 
 2. **Strip Info:**  
    ![Strip Info screenshot](images/strip_info_screenshot.png)   
@@ -68,7 +73,7 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
       If provided this camera will be used to capture images
    
    2. **To Auto Capture:**  
-      If checked then the `Custom Camera` will be automatically setup for you, If `Custom Camera` is not provided then a camera will be created, setup & deleted afterwards. If unchecked then you will have to setup the camera yourself e.g. Keep all objects in frame, Follow them as they move, etc
+      If checked then the `Custom Camera` will be automatically setup for you, If `Custom Camera` is not provided then an auto camera will be created, setup & deleted afterwards. If unchecked then you will have to setup the camera yourself e.g. Keep all objects in frame, Follow them as they move, etc
 
    3. **Camera Direction:**  
       Which direction should the camera be facing from while capturing sprites
@@ -81,6 +86,9 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
 
    6. **Consider Armature Bones:**  
       If this is enabled then the bones of the armature(s) are also taken into calculations when fitting the objects into view of camera 
+   
+   7. **Create Auto Camera:**  
+      This will add the auto camera that was to be used into your scene, If `Custom Camera` is assigned then it will apply the auto capture properties to it
 
 4. **Pixelation Settings**  
    ![Pixelation Settings screenshot](images/pixelation_settings_screenshot.png)   
@@ -98,15 +106,12 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
       If any pixel in the sprite has a transparency less than this amount then it is discarded (If you would like to remove all semi-transparent pixel set this to 1.0)
 
    5. **Alpha Step:**  
-      Ensures that all pixels have a transparency which is a multiple of this amount
+      Ensures that all pixels have a transparency which is a multiple of this amount, Keep at 0.0 to disable
 
-   6. **Shrink Interp:**  
-      Which interpolation method to use while shrinking the rendered image into pixelated version
-
-   7. **Test Image:**  
+   6. **Test Image:**  
       Provide an image on which to apply the pixelation settings (useful for testing pixelation settings before applying to entire sheet)
 
-   8. **Pixelate Test Image:**  
+   7. **Pixelate Test Image:**  
       Generates a pixelated version of the image provided, This is purely for testing purposes on the provided image, this button will not effect your sprite sheet in any way (You can also think of this as a standalone pixelizer for images)
 
 5. **Output Settings**  
@@ -115,19 +120,30 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
    1. **Label Font Size:**  
       The font size of the action name labels in sprite sheet, If you do not want labels in your sprite sheet you can set it to 0
 
-   2. **Sprite Margin:**  
-      Margin, in pixels, that should be applied around each sprite
+   2. **Surrounding Margins:**  
+      Margin, in pixels, that should be applied around the borders of the entire sprite sheet
    
-   3. **Sprite Consistency:**  
+   3. **Label Margin:**  
+      Vertical margin, in pixels, between the label and the images
+   
+   4. **Image Margin:**  
+      Horizonal margin, in pixel, between images within a row 
+   
+   5. **Sprite Consistency:**  
       This dictates the dimension of sprites,  
       `Individual Consistent` means each sprite keeps to its own content's width while matching the height of its row i.e. All sprites have their own dimensions  
       `Row Consistent` means every sprite in the row matches the row's widest sprite in width and tallest sprite in height i.e. All sprites in a row have the same dimensions  
       `All Consistent` means every sprite in the sheet matches the widest sprite in width and tallest sprite in height i.e. All sprites have the same dimensions  
    
-   4. **Sprite Align:**  
+   6. **Sprite Align:**  
       Decides how the content should be aligned within the sprite
    
-   5. **Delete Temp Folder:**  
+   7. **Combine Mode:**  
+      `Images` mode will create all sprites in separate files  
+      `Strips` mode will create each row as a seperate file   
+      `Sheet` mode will create a complete sprite sheet in a single file   
+
+   8. **Delete Temp Folder:**  
       Should the temp folder be deleted after creating the sprite sheet (Look at "How this works?" section to learn more)
 
 
@@ -135,7 +151,7 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
    Folder in which the sprite sheet is rendered
 
 7. **Combine Sprites:**  
-   Combines all images in the selected `Output Folder` into one sprite sheet but only given that it follows the following structure:
+   Combines all images in the selected `Output Folder` (Here it rather acts as an "input folder") into one sprite sheet but only given that it follows the following structure:
 
    ```
    SpriteSheetMakerTemp/
@@ -151,10 +167,10 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
    ```
 
 8. **Create Single Sprite:**  
-   This renders a single sprite with all settings applied, Only `Actions to Capture` is ignored and instead generates sprite in whatever is currently in the viewport
+   This renders a single sprite with all settings applied, The label for it is taken from the first `Animation Strip` item
 
 9. **Create Sprite Sheet:**  
-   This creates the entire sprite sheet at the specified `Output Folder`, While creating you might see a temp folder by the name of "SpriteSheetMakerTemp" do not delete it otherwise the sheet won't be created properly 
+   This creates the entire sprite sheet (or whichever `Combine Mode` is specified) at the given `Output Folder`, While creating you might see a temp folder by the name of "SpriteSheetMakerTemp" do not delete it otherwise the sheet won't be created properly 
 
 
 
@@ -172,9 +188,11 @@ The reason meshes were also added was so that `To Auto Capture` also puts them w
 **_Why is my sprite empty / not showing any objects?_**  
 1. Make sure you've added the desired objects to `Objects to Capture`
 2. Make sure `Pixels Per Meter` isn't 0 or too small 
-3. Make sure you've added lights  
-4. Make sure if `Auto Camera` is unchecked your own camera is setup properly
-5. Try rendering on your own before using this addon to see if the issue persists  
+3. Make sure if `To Auto Capture` is unchecked your own camera is setup properly
+4. Make sure `Pixelation Amount` isn't too much
+5. Make sure `Min Alpha` & `Alpha step` aren't exceeding 1.0 
+6. Make sure you've added lights  
+7. Try rendering on your own before using this addon to see if the issue persists  
 
 <br/>
 
@@ -225,4 +243,3 @@ You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoD
 
 ## Credits
 1. [Default Cube YouTube - I Am A Pixel Art Master](https://www.youtube.com/watch?v=AQcovwUHMf0)
-
