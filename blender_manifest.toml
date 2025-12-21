@@ -1,13 +1,13 @@
 schema_version = "1.0.0"
 id = "sprite_sheet_maker"
-version = "5.0.0"
+version = "4.0.0"
 name = "Sprite Sheet Maker"
 tagline = "3D to 2D sprite sheet converter with optional pixelation"
 maintainer = "Manas R. Makde"
 type = "add-on"
 website = "https://github.com/ManasMakde/SpriteSheetMaker/"
 tags = ["Animation", "Render"]
-blender_version_min = "4.0.0"
+blender_version_min = "4.2.0"
 license = [
   "SPDX:GPL-3.0-or-later",
 ]
