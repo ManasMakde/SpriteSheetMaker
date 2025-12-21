@@ -116,8 +116,8 @@ class SpriteSheetMakerProperties(PropertyGroup):
     to_pixelate: BoolProperty(name="To Pixelate", default=False)
     pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0)
     color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000)
-    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.0)
-    alpha_step: FloatProperty(name="Alpha Step", default=0.001, min=0.0, max=1.0)
+    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.1)
+    alpha_step: FloatProperty(name="Alpha Step", default=0.0, min=0.0, max=1.1)
     pixelate_image_path: StringProperty(
         name="Pixelate Image Path",
         subtype="FILE_PATH"
@@ -387,8 +387,9 @@ class SPRITESHEETMAKER_OT_PixelateImage(Operator):
             # Notify success
             popup(f"Pixelated image successfully at {pixelated_output_path}")
         except Exception as e:
-            popup("Error occurred while pixelating image! Make sure you have passed a valid image\nCheck console for more information")
-            print(f"[SpriteSheetMaker {datetime.now()}] Failed to pixelate image: {e} \n {traceback.format_exc()}")
+            error_msg = f"Error occurred while pixelating image! Make sure you have passed a valid image \n {e} \n {traceback.format_exc()}"
+            popup(error_msg)
+            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
      
 
         return {'FINISHED'}
@@ -416,8 +417,9 @@ class SPRITESHEETMAKER_OT_CombineSprites(Operator):
             param = assemble_param_from_props()
             assemble_images(param)
         except Exception as e:
-            popup("Error occurred while combining sprites! Make sure your folder follows this structure:\nMyFolder\n   - 1_Walking\n      - 1.png\n      - 2.png\n   - 2_Attacking\n      - 1.png\n      - 2.png\nCheck console for more information")
-            print(f"[SpriteSheetMaker {datetime.now()}] Failed to assemble frames into single sprite sheet: {e} \n {traceback.format_exc()}")
+            error_msg = f"Error occurred while combining sprites! Make sure your folder follows this structure:\nMyFolder\n   - 1_Walking\n      - 1.png\n      - 2.png\n   - 2_Attacking\n      - 1.png\n      - 2.png\n\nFailed to assemble frames into single sprite sheet: {e} \n {traceback.format_exc()}"
+            popup(error_msg)
+            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
             return {'FINISHED'}
      
 
@@ -458,7 +460,6 @@ class SPRITESHEETMAKER_OT_CreateSingleSprite(bpy.types.Operator):
 
         # Create single sprite
         try:
-
             # Create sprite
             param = sprite_param_from_props()
             SPRITE_SHEET_MAKER.create_sprite(param)
@@ -470,8 +471,9 @@ class SPRITESHEETMAKER_OT_CreateSingleSprite(bpy.types.Operator):
             popup(f"Created single sprite successfully at {os.path.normpath(param.output_file_path)}")
             return {'FINISHED'}
         except Exception as e:
-            popup("Error occurred while creating sprite! Check console for more information")
-            print(f"[SpriteSheetMaker {datetime.now()}] Failed to create sprite: {e} \n {traceback.format_exc()}")
+            error_msg = f"Error occurred while creating single sprite!\n {e} \n {traceback.format_exc()}"
+            popup(error_msg)
+            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
             return {'FINISHED'}
 
 class SPRITESHEETMAKER_OT_CreateSheet(Operator):
@@ -553,8 +555,9 @@ class SPRITESHEETMAKER_OT_CreateSheet(Operator):
             SPRITE_SHEET_MAKER.create_sprite_sheet(param)
             popup(f"Created successfully at {os.path.normpath(param.assemble_param.output_path)}")
         except Exception as e:
-            popup("Error occurred while trying to create sprite sheet!\nCheck console for more information")
-            print(f"[SpriteSheetMaker {datetime.now()}] Failed to assemble frames into single sprite sheet: {e} \n {traceback.format_exc()}")
+            error_msg = f"Error occurred while trying to create sprite sheet!\n{e}\n{traceback.format_exc()}"
+            popup(error_msg)
+            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
             return {'FINISHED'}
     
 
@@ -936,6 +939,9 @@ def get_label_text():
     # Get the label text of the first strip 
     scene = bpy.context.scene
     for strip_item in scene.animation_strips:
+        if(strip_item.label == ""):
+            continue
+    
         return strip_item.label
     
     return UNTITLED_LABEL_TEXT

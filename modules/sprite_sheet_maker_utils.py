@@ -363,7 +363,7 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
             bpy.ops.render.render(scene=pixelate_scene.name, write_still=True)
 
             # Unload image from memory
-            # bpy.data.images.remove(image)
+            bpy.data.images.remove(image)
 
             print(f"[SpriteSheetMaker {datetime.now()}] Pixelated to '{output_path}'")
 
@@ -374,7 +374,7 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
 
     # Set back old values
     bpy.context.window.scene = original_scene
-    # bpy.data.scenes.remove(pixelate_scene)
+    bpy.data.scenes.remove(pixelate_scene)
 
 
     # Throw exception incase of failure
