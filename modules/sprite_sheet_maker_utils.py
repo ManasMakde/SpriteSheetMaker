@@ -16,7 +16,6 @@ PIXELATE_SCENE_NAME = "SpriteSheetMakerPixelateScene"
 SPRITE_SHEET_MAKER_BLEND_FILE = "../blend_files/SpriteSheetMaker.blend"
 IMAGE_INPUT_NODE = "ImageInput"
 PIXELATION_AMOUNT_NODE = "PixelationAmount"
-SHRINK_SCALE_NODE = "ShrinkScale"
 COLOR_AMOUNT_NODE = "ColorAmount"
 MIN_ALPHA_NODE = "MinAlpha"
 ALPHA_STEP_NODE = "AlphaStep"
@@ -209,10 +208,6 @@ def setup_auto_camera(param:AutoCaptureParam, existing_camera = None):
 
     # Get camera data
     cam_data = cam_obj.data
-
-
-    # Set as scene camera to render from
-    # bpy.context.scene.camera = cam_obj
 
 
     # Set properties of camera
