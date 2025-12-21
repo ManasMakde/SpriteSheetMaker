@@ -356,7 +356,8 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
 
             # Assign output path
             output_path = image_paths[input_path]
-            pixelate_scene.render.filepath = (output_path if (output_path != "" and output_path != None) else input_path)  # Override existing if no output path is given
+            output_path = output_path if (output_path != "" and output_path != None) else input_path
+            pixelate_scene.render.filepath = output_path  # Override existing if no output path is given
             
             # Render pixelated version
             print(f"[SpriteSheetMaker {datetime.now()}] Rendering pixelated sprite")

@@ -417,7 +417,7 @@ class SPRITESHEETMAKER_OT_CombineSprites(Operator):
             param = assemble_param_from_props()
             assemble_images(param)
         except Exception as e:
-            error_msg = f"Error occurred while combining sprites! Make sure your folder follows this structure:\nMyFolder\n   - 1_Walking\n      - 1.png\n      - 2.png\n   - 2_Attacking\n      - 1.png\n      - 2.png\n\nFailed to assemble frames into single sprite sheet: {e} \n {traceback.format_exc()}"
+            error_msg = f"Error occurred while combining sprites!\nMake sure the provided 'Output Folder' follows this structure:\nMyFolder\n   - 1_Walking\n      - 1.png\n      - 2.png\n   - 2_Attacking\n      - 1.png\n      - 2.png\n\nFailed to assemble frames into single sprite sheet: {e} \n {traceback.format_exc()}"
             popup(error_msg)
             print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
             return {'FINISHED'}
@@ -692,7 +692,8 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
                 # Create Auto Camera Button
                 box.separator(factor=0.25)
                 row = box.row()
-                row.operator("spritesheetmaker.create_auto_camera", text="Create Auto Camera", icon="OUTLINER_OB_CAMERA")
+                button_text = "Create Auto Camera" if props.custom_camera == None else "Modify Custom Camera"
+                row.operator("spritesheetmaker.create_auto_camera", text=button_text, icon="OUTLINER_OB_CAMERA")
                 
 
         # Pixelation Settings (Collapsible)
