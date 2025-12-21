@@ -96,13 +96,13 @@ def add_label_to_image(img_path:str, label_text:str, param:AssembleParam):
 
 
     # Paste label
-    label_top_offset = 0
+    label_top_offset = surrounding_margin_top
     if(font_size != 0):
         label_location_x = surrounding_margin_left 
         label_location_y = surrounding_margin_top - label_bbox[1]
         draw.text((label_location_x, label_location_y), label_text, fill="white", font=font, spacing = 0)
-        label_top_offset = surrounding_margin_top + label_height + label_margin
-    
+        label_top_offset += label_height + label_margin
+
 
     # Paste original image
     img_location_x = surrounding_margin_left
