@@ -92,7 +92,7 @@ def get_bounding_box(objects, ignore_armatures = True):
 
     # Return if no objects
     if(len(objects) == 0):
-        return Vector(), Vector()
+        return Vector((0, 0, 0)), Vector((0, 0, 0))
     
 
     # Iterate through all objects and get min/max corners
@@ -132,6 +132,13 @@ def get_bounding_box(objects, ignore_armatures = True):
             max_corner.x = max(max_corner.x, v_world.x)
             max_corner.y = max(max_corner.y, v_world.y)
             max_corner.z = max(max_corner.z, v_world.z)
+
+
+    # Safe guard against infinite values
+    if(any(math.isinf(v) for v in min_corner) or any(math.isinf(v) for v in max_corner)):
+        min_corner = Vector((0, 0, 0))
+        max_corner = Vector((0, 0, 0))
+
 
     return min_corner, max_corner
 
@@ -230,8 +237,9 @@ def setup_auto_camera(param:AutoCaptureParam, existing_camera = None):
         
 
     # Determine resolution
-    res_x = int(width * param.pixels_per_meter)
-    res_y = int(height * param.pixels_per_meter)
+    unit_scale = bpy.context.scene.unit_settings.scale_length
+    res_x = int(width * param.pixels_per_meter * unit_scale) 
+    res_y = int(height * param.pixels_per_meter * unit_scale)
     bpy.context.scene.render.resolution_x = res_x
     bpy.context.scene.render.resolution_y = res_y
     bpy.context.scene.render.resolution_percentage = 100 # Ensuring complete resolution
@@ -246,7 +254,8 @@ def delete_auto_camera():
 def render(output_file_path:str):
 
     # Set Output File Location
-    bpy.context.scene.render.filepath = output_file_path
+    bpy.context.scene.render.filepath = os.path.normpath(output_file_path)
+
 
     # Start Render
     bpy.ops.render.render(write_still=True)
