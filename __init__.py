@@ -93,6 +93,12 @@ class SpriteSheetMakerStripInfo(bpy.types.PropertyGroup):
             self.label = new_label
 
 class SpriteSheetMakerProperties(PropertyGroup):
+
+    def update_output_folder(self, context):
+        if self.output_folder.startswith("//"):
+            self.output_folder = bpy.path.abspath(self.output_folder)
+    
+        
     # Camera settings
     custom_camera: PointerProperty(name="Custom Camera", type=bpy.types.Object, poll=lambda self, obj: obj.type == 'CAMERA')
     to_auto_capture: BoolProperty(name="To Auto Capture", default=True)
@@ -167,7 +173,8 @@ class SpriteSheetMakerProperties(PropertyGroup):
     delete_temp_folder: BoolProperty(name="Delete Temp Folder", default=True)
     output_folder: StringProperty(
         name="Output Folder",
-        subtype="DIR_PATH"
+        subtype="DIR_PATH",
+        update=update_output_folder
     )
 
     # Collapsible section toggles
