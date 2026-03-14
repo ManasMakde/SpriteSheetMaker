@@ -252,9 +252,9 @@ You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoD
    ```
 3. (Optional) Install [Blender Development Plugin](https://marketplace.visualstudio.com/items?itemName=JacquesLucke.blender-development) to ease workflow
 
-4. After you're done making changes, Build the project with the following command
+4. After you're done making changes, Build the zip files with the following command
    ```
-   blender --command extension build --split-platforms
+   python build.py
    ```
 5. (For maintainer only) Upload all generated .zip files separately one by one to https://extensions.blender.org/
 
@@ -264,4 +264,3 @@ You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoD
 
 ## Credits
 1. [Default Cube YouTube - I Am A Pixel Art Master](https://www.youtube.com/watch?v=AQcovwUHMf0)
-
