@@ -114,7 +114,7 @@ class SpriteSheetMakerProperties(PropertyGroup):
         ],
         default=CameraDirection.NEG_X.value
     )
-    pixels_per_meter: IntProperty(name="Pixels Per Meter", default=500, min=1, soft_max=5000)
+    pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0)
     camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.05, min=0.0, soft_max=10.0)
     consider_armature_bones: BoolProperty(default=False)
 
