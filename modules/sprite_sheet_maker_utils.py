@@ -52,7 +52,7 @@ class AutoCaptureParam:
         self.objects:set = set({})
         self.consider_armature_bones:bool = False
         self.camera_direction:CameraDirection = CameraDirection.NEG_X
-        self.pixels_per_meter:int = 500
+        self.pixels_per_meter:float = 500.0
         self.camera_padding:float = 0.05
 
 class PixelateParam:

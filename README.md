@@ -240,6 +240,27 @@ You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoD
 > Remember this is just a tool to help with your workflow and if you want to make really good art I recommend you also paint over the spritesheet yourself 🙂
 
 
+## 👨‍💻 Development
+
+1. Clone this repo
+   ```
+   git clone https://github.com/ManasMakde/SpriteSheetMaker
+   ```
+2. Switch to whichever branch you want to modify
+   ```
+   git switch <branch-name>
+   ```
+3. (Optional) Install [Blender Development Plugin](https://marketplace.visualstudio.com/items?itemName=JacquesLucke.blender-development) to ease workflow
+
+4. After you're done making changes, Build the zip files with the following command
+   ```
+   python build.py
+   ```
+5. (For maintainer only) Upload all generated .zip files separately one by one to https://extensions.blender.org/
+
+> **Note:** 
+> Do not upload all zip files all at once it does not work
+
 
 ## Credits
 1. [Default Cube YouTube - I Am A Pixel Art Master](https://www.youtube.com/watch?v=AQcovwUHMf0)
