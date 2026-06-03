@@ -299,6 +299,52 @@ class SPRITESHEETMAKER_OT_move_strip(bpy.types.Operator):
 
         return {"FINISHED"}
 
+class SPRITESHEETMAKER_OT_play_capture_items(bpy.types.Operator):
+    bl_idname = "spritesheetmaker.play_capture_items"
+    bl_label = "Play Capture Items"
+    bl_description = "Preview strip animations simultaneously"
+    bl_options = {'UNDO'}
+
+    def execute(self, context):
+
+        # Return if no capture items
+        scene = context.scene
+        si = scene.strip_index
+        strip = scene.animation_strips[si]
+        if si < 0 or si >= len(scene.animation_strips) or len(strip.capture_items) == 0:
+            import logging
+            logging.warning("No valid strip or capture items found")
+            return {'CANCELLED'}
+        
+
+        # Assign all actions to respective Objects
+        min_frame = float('inf')
+        max_frame = float('-inf')
+        has_valid_action = False
+        for item in strip.capture_items:
+            if not item.object or not item.action or not item.object.animation_data:
+                continue
+        
+            item.object.animation_data.action = item.action
+            
+            if item.action.frame_range:
+                min_frame = min(min_frame, item.action.frame_range[0])
+                max_frame = max(max_frame, item.action.frame_range[1])
+                has_valid_action = True
+        
+
+        # Set start and end frame
+        if has_valid_action:
+            scene.frame_start = int(min_frame)
+            scene.frame_end = int(max_frame)
+            scene.frame_current = int(min_frame)
+        
+
+        # Play animations
+        bpy.ops.screen.animation_play()
+            
+        return {'FINISHED'}
+
 class SPRITESHEETMAKER_OT_add_capture_item(bpy.types.Operator):
     bl_idname = "spritesheetmaker.add_capture_item"
     bl_label = "Add Capture Item"
@@ -637,6 +683,8 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
             row_layout = row_box.row()
             row_layout.template_list('SPRITESHEETMAKER_UL_CaptureItems', '', strip, 'capture_items', strip, 'capture_item_index', rows=3, maxrows=3)
             col = row_layout.column(align=True)
+            col.operator('spritesheetmaker.play_capture_items', icon='PLAY', text='')
+            col.separator()
             col.operator('spritesheetmaker.add_capture_item', icon='ADD', text='')
             col.operator('spritesheetmaker.remove_capture_item', icon='REMOVE', text='')
 
@@ -659,6 +707,8 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
             row_layout = row_box.row()
             row_layout.template_list('SPRITESHEETMAKER_UL_CaptureItems', '', scene, 'dummy_items', scene, 'dummy_index', rows=3, maxrows=3)
             col = row_layout.column(align=True)
+            col.operator('spritesheetmaker.play_capture_items', icon='PLAY', text='')
+            col.separator()
             col.operator('spritesheetmaker.add_capture_item', icon='ADD', text='')
             col.operator('spritesheetmaker.remove_capture_item', icon='REMOVE', text='')
             row_box.prop(scene, "dummy_manual_frames")
@@ -1043,6 +1093,7 @@ classes = (
     SPRITESHEETMAKER_OT_add_strip,
     SPRITESHEETMAKER_OT_remove_strip,
     SPRITESHEETMAKER_OT_move_strip,
+    SPRITESHEETMAKER_OT_play_capture_items,
     SPRITESHEETMAKER_OT_add_capture_item,
     SPRITESHEETMAKER_OT_remove_capture_item,
     SPRITESHEETMAKER_OT_CreateAutoCamera,

@@ -52,6 +52,8 @@ An addon to convert your 3D animations into 2D sprite sheets with in-built toggl
 
    This shows the properties of whichever strip is selected in `Animation Strips`, If it is grayed out & disabled then it mean you have to add a strip first
 
+   You can preview the actions to be captured in this strip by pressing ▶︎ button
+
    1. **Label:**  
       This is the text that will be added on top of the strip in the sprite sheet
 
