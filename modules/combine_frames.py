@@ -20,12 +20,10 @@ class SpriteAlign(Enum):
     BOTTOM_LEFT = "Bottom Left"
     BOTTOM_CENTER = "Bottom Center"
     BOTTOM_RIGHT = "Bottom Right"
-
 class SpriteConsistency(Enum):
     INDIVIDUAL = "Individual Consistent"
     ROW = "Row Consistent"
     ALL = "All Consistent"
-
 class CombineMode(Enum):
     IMAGES = "Images"
     STRIPS = "Strips"
@@ -43,11 +41,8 @@ class RowData:
         self.img_accum_width:int = 0  # Combined
         self.img_widest:int = 0  # width of the widest image in the row
         self.img_tallest:int = 0  # height of the tallest image in the row
-
 class AssembleParam:
     def __init__(self):
-        self.input_folder_path:str = ""
-        self.output_path:str = ""  # file path if combine_mode is sheet otherwise folder path
         self.font_size:int = 24
         self.surrounding_margin:int = (15, 15, 15, 15)  # top, right, bottom, left
         self.label_margin:int = 15
@@ -112,7 +107,6 @@ def add_label_to_image(img_path:str, label_text:str, param:AssembleParam):
 
     # Save original image
     new_img.save(img_path)
-
 def unique_path(target_path:str, is_file:bool=False, count_limit:int = 100000):
 
     # Return if path already exists
@@ -134,7 +128,6 @@ def unique_path(target_path:str, is_file:bool=False, count_limit:int = 100000):
     
 
     return target_path
-
 def create_folder(at_path, folder_name=""):
 
     # Make sure the name is safe for folder creation
@@ -148,7 +141,6 @@ def create_folder(at_path, folder_name=""):
 
 
     return folder_path
-
 def calc_align_offset(align:SpriteAlign, large_width:int, large_height:int, small_width:int, small_height:int):
 
     x_offset = 0.0
@@ -174,68 +166,7 @@ def calc_align_offset(align:SpriteAlign, large_width:int, large_height:int, smal
 
 
     return int(x_offset), int(y_offset)
-
-def assemble_images(param:AssembleParam):
-
-    # Load font and Get all sorted action sub folders
-    font = ImageFont.load_default(param.font_size) if param.font_size !=0 else None
-    action_folders = sorted(
-        [folder for folder in os.listdir(param.input_folder_path) if os.path.isdir(os.path.join(param.input_folder_path, folder))],
-        key=lambda x: int(x.split('_')[0])
-    )
-    print(f"[SpriteSheetMaker {datetime.now()}] Found {len(action_folders)} action sub folders")
-
-
-    # Assign row data from folders 
-    global_img_widest:int = 0
-    global_img_tallest:int = 0
-    rows:list[RowData] = []
-    for action_folder in action_folders:
-
-        # Create row data
-        row_data = RowData()
-
-
-        # Add label to row data
-        row_data.label_text = action_folder.split('_', 1)[1]
-        label_bbox = (0, 0, 0, 0) if param.font_size == 0 else font.getbbox(row_data.label_text)
-        row_data.label_width = (label_bbox[2] - label_bbox[0])
-        row_data.label_height = (label_bbox[3] - label_bbox[1]) 
-        row_data.label_offset = (0, -label_bbox[1])
-
-
-        # Images
-        abs_action_folder = os.path.join(param.input_folder_path, action_folder)
-        img_names = sorted(os.listdir(abs_action_folder), key=lambda x: int(x.split('.')[0]))
-        for img_name in img_names:
-
-            # Add image to row data
-            img = Image.open(os.path.join(abs_action_folder, img_name))
-            row_data.images.append(img)
-
-            # Add accumulated width, widest img width & tallest img height to row data
-            row_data.img_accum_width += img.width
-            row_data.img_widest = max(row_data.img_widest, img.width)
-            row_data.img_tallest = max(row_data.img_tallest, img.height)
-
-            # Calculate widest & tallest images amongst all
-            global_img_widest = max(global_img_widest, img.width)
-            global_img_tallest = max(global_img_tallest, img.height)
-
-
-        # Append row data
-        rows.append(row_data)
-
-
-    # Combine into sheet or strips 
-    if(param.combine_mode == CombineMode.SHEET):
-        combine_into_sheet(param, rows, global_img_widest, global_img_tallest)
-    elif(param.combine_mode == CombineMode.STRIPS):
-        combine_into_strips(param, rows, global_img_widest, global_img_tallest)
-    elif(param.combine_mode == CombineMode.IMAGES):
-        combine_into_images(param, rows, global_img_widest, global_img_tallest)
-
-def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int):
+def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int, output_path:str):
 
     # Extract from param
     surrounding_margin = param.surrounding_margin
@@ -337,11 +268,10 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
         
 
     # Save the final output sprite sheet
-    print(f"[SpriteSheetMaker {datetime.now()}] Saving sprite sheet to '{param.output_path}' ...")
-    sheet.save(param.output_path)
-    print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite sheet to {param.output_path}")
-
-def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int):
+    print(f"[SpriteSheetMaker {datetime.now()}] Saving sprite sheet to '{output_path}' ...")
+    sheet.save(output_path)
+    print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite sheet to {output_path}")
+def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int, output_path:str):
     
     # Extract from param
     surrounding_margin_top = param.surrounding_margin[0]
@@ -358,7 +288,7 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
     
     # Make sure folder exists
-    create_folder(param.output_path)
+    create_folder(output_path)
 
 
     # Iterate and create strips
@@ -422,12 +352,11 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
         # Save strip
         ext = row_data.images[0].format if len(row_data.images) != 0 else DEFAULT_FILE_FORMAT
-        strip_output_path = os.path.join(param.output_path, f"{row_data.label_text}.{ext.lower()}")
+        strip_output_path = os.path.join(output_path, f"{row_data.label_text}.{ext.lower()}")
         print(f"[SpriteSheetMaker {datetime.now()}] Saving strip to '{strip_output_path}' ...")
         strip.save(strip_output_path)
         print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite strip to {strip_output_path}")
-
-def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int):
+def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int, output_path:str):
     
     # Extract from param
     surrounding_margin_top = param.surrounding_margin[0]
@@ -442,14 +371,14 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
 
     
     # Make sure folder exists
-    create_folder(param.output_path)
+    create_folder(output_path)
 
 
     # Iterate and create strips
     for row_count, row_data in enumerate(rows):
 
         # Create row folder
-        row_folder = os.path.join(param.output_path, f"{row_count}_{row_data.label_text}")
+        row_folder = os.path.join(output_path, f"{row_count}_{row_data.label_text}")
         create_folder(row_folder)
         row_count += 1
 
@@ -490,3 +419,62 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
             print(f"[SpriteSheetMaker {datetime.now()}] Saving image to '{img_output_path}' ...")
             new_img.save(img_output_path)
             print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite strip to {img_output_path}")
+def assemble_images(param:AssembleParam, input_folder_path:str, output_path:str):
+
+    # Load font and Get all sorted action sub folders
+    font = ImageFont.load_default(param.font_size) if param.font_size !=0 else None
+    action_folders = sorted(
+        [folder for folder in os.listdir(input_folder_path) if os.path.isdir(os.path.join(input_folder_path, folder))],
+        key=lambda x: int(x.split('_')[0])
+    )
+    print(f"[SpriteSheetMaker {datetime.now()}] Found {len(action_folders)} action sub folders")
+
+
+    # Assign row data from folders 
+    global_img_widest:int = 0
+    global_img_tallest:int = 0
+    rows:list[RowData] = []
+    for action_folder in action_folders:
+
+        # Create row data
+        row_data = RowData()
+
+
+        # Add label to row data
+        row_data.label_text = action_folder.split('_', 1)[1]
+        label_bbox = (0, 0, 0, 0) if param.font_size == 0 else font.getbbox(row_data.label_text)
+        row_data.label_width = (label_bbox[2] - label_bbox[0])
+        row_data.label_height = (label_bbox[3] - label_bbox[1]) 
+        row_data.label_offset = (0, -label_bbox[1])
+
+
+        # Images
+        abs_action_folder = os.path.join(input_folder_path, action_folder)
+        img_names = sorted(os.listdir(abs_action_folder), key=lambda x: int(x.split('.')[0]))
+        for img_name in img_names:
+
+            # Add image to row data
+            img = Image.open(os.path.join(abs_action_folder, img_name))
+            row_data.images.append(img)
+
+            # Add accumulated width, widest img width & tallest img height to row data
+            row_data.img_accum_width += img.width
+            row_data.img_widest = max(row_data.img_widest, img.width)
+            row_data.img_tallest = max(row_data.img_tallest, img.height)
+
+            # Calculate widest & tallest images amongst all
+            global_img_widest = max(global_img_widest, img.width)
+            global_img_tallest = max(global_img_tallest, img.height)
+
+
+        # Append row data
+        rows.append(row_data)
+
+
+    # Combine into sheet or strips 
+    if(param.combine_mode == CombineMode.SHEET):
+        combine_into_sheet(param, rows, global_img_widest, global_img_tallest, output_path)
+    elif(param.combine_mode == CombineMode.STRIPS):
+        combine_into_strips(param, rows, global_img_widest, global_img_tallest, output_path)
+    elif(param.combine_mode == CombineMode.IMAGES):
+        combine_into_images(param, rows, global_img_widest, global_img_tallest, output_path)
