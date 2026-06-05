@@ -66,9 +66,9 @@ class SSM_CaptureItem(PropertyGroup):
                     strip.update_label_from_action()
                     return
 
-    object: PointerProperty(name="Object", type=Object)
-    action: PointerProperty(name="Action", type=Action, update=action_update)
-    slot: StringProperty(name="Slot", default="")
+    object: PointerProperty(name="Object", type=Object, description="Target object to be rendered within strip")
+    action: PointerProperty(name="Action", type=Action, description="Animation to be captured in the strip", update=action_update)
+    slot: StringProperty(name="Slot", default="", description="(Optional)")
 class SSM_StripInfo(PropertyGroup):
 
     def update_label_from_action(self):
@@ -96,16 +96,17 @@ class SSM_StripInfo(PropertyGroup):
         SSM_OT_sync_strips.sync(context, {prop_name})
 
     in_sync: BoolProperty(name="Sync Strip", default=True)
-    label: StringProperty(name="Label", default="")
+    label: StringProperty(name="Label", default="", description="The text that will be added on top of the strip in the sprite sheet")
     capture_items: CollectionProperty(type=SSM_CaptureItem)
-    capture_item_index: IntProperty(default=0)
+    capture_item_index: IntProperty(default=0, description="Pointer tracking active item inside collection")
     
     
     # Camera settings
-    custom_camera: PointerProperty(name="Custom Camera", type=Object, poll=lambda self, obj: obj.type == 'CAMERA', update=lambda self, ctx: self.sync_update(ctx, "custom_camera"))
-    to_auto_capture: BoolProperty(name="To Auto Capture", default=True, update=lambda self, ctx: self.sync_update(ctx, "to_auto_capture"))
+    custom_camera: PointerProperty(name="Custom Camera", type=Object, poll=lambda self, obj: obj.type == 'CAMERA', description="Custom camera object to use for rendering this strip", update=lambda self, ctx: self.sync_update(ctx, "custom_camera"))
+    to_auto_capture: BoolProperty(name="To Auto Capture", default=True, description="Automatically calculate and position camera bounding box", update=lambda self, ctx: self.sync_update(ctx, "to_auto_capture"))
     camera_direction: EnumProperty(
         name="Camera Direction",
+        description="Direction from which the camera will look toward the targeted objects",
         items = [
             (CameraDirection.X.value, "X", "Camera pointing along the X axis"),
             (CameraDirection.Y.value, "Y", "Camera pointing along the Y axis"),
@@ -117,28 +118,30 @@ class SSM_StripInfo(PropertyGroup):
         default=CameraDirection.NEG_X.value,
         update=lambda self, ctx: self.sync_update(ctx, "camera_direction")
     )
-    h_center_object: PointerProperty(name="Horizontal Center Object", type=Object, update=lambda self, ctx: self.sync_update(ctx, "h_center_object"))
-    h_center_bone: StringProperty(name="Horizontal Center Bone", default="")
-    v_center_object: PointerProperty(name="Vertical Center Object", type=Object, update=lambda self, ctx: self.sync_update(ctx, "v_center_object"))
-    v_center_bone: StringProperty(name="Vertical Center Bone", default="")
-    consider_armature_bones: BoolProperty(default=False, update=lambda self, ctx: self.sync_update(ctx, "consider_armature_bones"))
-    pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, update=lambda self, ctx: self.sync_update(ctx, "pixels_per_meter"))
-    camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, update=lambda self, ctx: self.sync_update(ctx, "camera_padding"))
+    h_center_object: PointerProperty(name="Horizontal Center Object", type=Object, description="Object whose origin will be used as the horizontal center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "h_center_object"))
+    h_center_bone: StringProperty(name="Horizontal Center Bone", default="", description="Bone whose origin will be used as the horizontal center for each sprite frame")
+    v_center_object: PointerProperty(name="Vertical Center Object", type=Object, description="Object whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_object"))
+    v_center_bone: StringProperty(name="Vertical Center Bone", default="", description="Bone whose origin will be used as the vertically center for each sprite frame")
+    
+    consider_armature_bones: BoolProperty(default=False, description="Include all armature bones when calculating auto-capture camera bounds to ensure they remain within camera view", update=lambda self, ctx: self.sync_update(ctx, "consider_armature_bones"))
+    pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, description="Number of pixels rendered per one world space meter unit", update=lambda self, ctx: self.sync_update(ctx, "pixels_per_meter"))
+    camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding"))
 
 
     # Pixelation settings
-    to_pixelate: BoolProperty(name="To Pixelate", default=False, update=lambda self, ctx: self.sync_update(ctx, "to_pixelate"))
-    pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0, update=lambda self, ctx: self.sync_update(ctx, "pixelation_amount"))
-    color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000, update=lambda self, ctx: self.sync_update(ctx, "color_amount"))
-    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.1, update=lambda self, ctx: self.sync_update(ctx, "min_alpha"))
-    alpha_step: FloatProperty(name="Alpha Step", default=0.0, min=0.0, max=1.1, update=lambda self, ctx: self.sync_update(ctx, "alpha_step"))
+    to_pixelate: BoolProperty(name="To Pixelate", default=False, description="If enabled the strip is pixelated", update=lambda self, ctx: self.sync_update(ctx, "to_pixelate"))
+    pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0, description="By how much amount to pixelate the strip", update=lambda self, ctx: self.sync_update(ctx, "pixelation_amount"))
+    color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000, description="How much amount of color to keep within the strip", update=lambda self, ctx: self.sync_update(ctx, "color_amount"))
+    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.1, description="If any pixel in the strip has a transparency less than this amount then it is discarded\nSet as 1.0 if to remove all semi-transparent pixel", update=lambda self, ctx: self.sync_update(ctx, "min_alpha"))
+    alpha_step: FloatProperty(name="Alpha Step", default=0.0, min=0.0, max=1.1, description="Ensures that all pixels have a transparency which is a multiple of this amount", update=lambda self, ctx: self.sync_update(ctx, "alpha_step"))
     pixelate_image_path: StringProperty(
         name="Pixelate Image Path",
         subtype="FILE_PATH",
+        description="Target image to pixelate",
         update=lambda self, ctx: self.sync_update(ctx, "pixelate_image_path")
     )
     
-    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, update=lambda self, ctx: self.sync_update(ctx, "manual_frames"))
+    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the strip\nIf disabled, the start & end frame of longest action will be taken", update=lambda self, ctx: self.sync_update(ctx, "manual_frames"))
     frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574, update=lambda self, ctx: self.sync_update(ctx, "frame_start"))
     frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574, update=lambda self, ctx: self.sync_update(ctx, "frame_end"))
 class SSM_Properties(PropertyGroup):
@@ -152,39 +155,42 @@ class SSM_Properties(PropertyGroup):
     
 
     # Output settings
-    label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000)
-    surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000)
-    surrounding_margin_right: IntProperty(name="Surrounding Margin Right", default=15, min=0, soft_max=1000)
-    surrounding_margin_bottom: IntProperty(name="Surrounding Margin Bottom", default=15, min=0, soft_max=1000)
-    surrounding_margin_left: IntProperty(name="Surrounding Margin Left", default=15, min=0, soft_max=1000)
-    label_margin: IntProperty(name="Label Margin", default=15, min=0, soft_max=1000)
-    image_margin: IntProperty(name="Image Margin", default=15, min=0, soft_max=1000)
+    label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000, description="Font size of label text")
+    surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the top of the sprite sheet")
+    surrounding_margin_right: IntProperty(name="Surrounding Margin Right", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the right of the sprite sheet")
+    surrounding_margin_bottom: IntProperty(name="Surrounding Margin Bottom", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the bottom of the sprite sheet")
+    surrounding_margin_left: IntProperty(name="Surrounding Margin Left", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the left of the sprite sheet")
+    label_margin: IntProperty(name="Label Margin", default=15, min=0, soft_max=1000, description="Vertical margin gap (in pixels) between the label and the images")
+    image_margin: IntProperty(name="Image Margin", default=15, min=0, soft_max=1000, description="Horizonal margin gap (in pixels) between images within a row/strip")
     sprite_consistency: EnumProperty(
         name="Sprite Align",
+        description="Dictates the dimension of sprites throughout the sprite sheet",
         items=[
             (SpriteConsistency.INDIVIDUAL.value, "Individual Consistent", "Each sprite fits it's own content"),
             (SpriteConsistency.ROW.value, "Row Consistent", "All sprites in a row have the same dimensions"),
-            (SpriteConsistency.ALL.value, "All Consistent", "All sprites in the sheet have the same dimensions")
+            (SpriteConsistency.ALL.value, "All Consistent", "All sprites throughout the sheet have the same dimensions")
         ],
         default=SpriteConsistency.INDIVIDUAL.value
     )
     sprite_align: EnumProperty(
         name="Sprite Align",
+        description="Dictates how the content should be aligned within the sprite",
         items=[
-            (SpriteAlign.TOP_LEFT.value, "Top Left", "Align sprite to vertical top & horizontal left"),
-            (SpriteAlign.TOP_CENTER.value, "Top Center", "Align sprite to vertical top & horizontal center"),
-            (SpriteAlign.TOP_RIGHT.value, "Top Right", "Align sprite to vertical top & horizontal right"),
-            (SpriteAlign.MIDDLE_LEFT.value, "Middle Left", "Align sprite to vertical middle & horizontal left"),
-            (SpriteAlign.MIDDLE_CENTER.value, "Middle Center", "Align sprite to vertical middle & horizontal center"),
-            (SpriteAlign.MIDDLE_RIGHT.value, "Middle Right", "Align sprite to vertical middle & horizontal right"),
-            (SpriteAlign.BOTTOM_LEFT.value, "Bottom Left", "Align sprite to vertical bottom & horizontal left"),
-            (SpriteAlign.BOTTOM_CENTER.value, "Bottom Center", "Align sprite to vertical bottom & horizontal center"),
-            (SpriteAlign.BOTTOM_RIGHT.value, "Bottom Right", "Align sprite to vertical bottom & horizontal right"),
+            (SpriteAlign.TOP_LEFT.value, "Top Left", "Align content to vertical top & horizontal left"),
+            (SpriteAlign.TOP_CENTER.value, "Top Center", "Align content to vertical top & horizontal center"),
+            (SpriteAlign.TOP_RIGHT.value, "Top Right", "Align content to vertical top & horizontal right"),
+            (SpriteAlign.MIDDLE_LEFT.value, "Middle Left", "Align content to vertical middle & horizontal left"),
+            (SpriteAlign.MIDDLE_CENTER.value, "Middle Center", "Align content to vertical middle & horizontal center"),
+            (SpriteAlign.MIDDLE_RIGHT.value, "Middle Right", "Align content to vertical middle & horizontal right"),
+            (SpriteAlign.BOTTOM_LEFT.value, "Bottom Left", "Align content to vertical bottom & horizontal left"),
+            (SpriteAlign.BOTTOM_CENTER.value, "Bottom Center", "Align content to vertical bottom & horizontal center"),
+            (SpriteAlign.BOTTOM_RIGHT.value, "Bottom Right", "Align content to vertical bottom & horizontal right"),
         ],
         default=SpriteAlign.BOTTOM_CENTER.value
     )
     combine_mode: EnumProperty(
         name="Combine Mode",
+        description="Dictates how all the rendered frames will be stitched together",
         items=[
             (CombineMode.IMAGES.value, "Images", "Render out individual images"),
             (CombineMode.STRIPS.value, "Strips", "Render out separate strips for each action"),
@@ -192,15 +198,17 @@ class SSM_Properties(PropertyGroup):
         ],
         default=CombineMode.SHEET.value
     )
+    delete_temp_folder: BoolProperty(name="Delete Temp Folder", default=True, description="Whether to delete the cache folder after sprite sheet is made\nHowever the folder will not be deleted incase of any error even if this is enabled")
     temp_folder: StringProperty(
         name="Temp Folder",
         subtype="DIR_PATH",
+        description="Folder to use as input for 'Combine Sprites'",
         update=update_temp_folder
     )
-    delete_temp_folder: BoolProperty(name="Delete Temp Folder", default=True)
     output_folder: StringProperty(
         name="Output Folder",
         subtype="DIR_PATH",
+        description="Folder in which the generated sprite sheet is saved into",
         update=update_output_folder
     )
 
@@ -242,7 +250,7 @@ class SSM_OT_key_listener(Operator):
 class SSM_OT_export_settings(Operator, ExportHelper):
     bl_idname = "spritesheetmaker.export_settings"
     bl_label = "Export"
-    bl_description = "Export saved settings"
+    bl_description = "Save current settings as .json file to import later"
     bl_options = {'UNDO'}
 
     filename_ext = ".json"
@@ -310,7 +318,7 @@ class SSM_OT_export_settings(Operator, ExportHelper):
 class SSM_OT_import_settings(Operator, ImportHelper):
     bl_idname = "spritesheetmaker.import_settings"
     bl_label = "Import"
-    bl_description = "Import saved settings"
+    bl_description = "Import saved settings from .json file"
     bl_options = {'UNDO'}
 
     filename_ext = ".json"
@@ -439,7 +447,7 @@ class SSM_OT_add_strip(Operator):
 class SSM_OT_remove_strip(Operator):
     bl_idname = "spritesheetmaker.remove_strip"
     bl_label = "Remove Strip"
-    bl_description = "Delete animation strip"
+    bl_description = "Remove selected animation strip"
     bl_options = {'UNDO'}
 
     def execute(self, context):
@@ -479,7 +487,7 @@ class SSM_OT_move_strip(Operator):
 class SSM_OT_sync_strips(Operator):
     bl_idname = "spritesheetmaker.sync_strips"
     bl_label = "Sync Strips"
-    bl_description = "Sync all animation strips"
+    bl_description = "All strips which have this enabled will have their properties in sync with each other\nAlt + Click to assign properties of current strip to all other strips which are in sync"
     bl_options = {'UNDO'}
     
     _is_syncing = False
@@ -586,7 +594,7 @@ class SSM_UL_CaptureItems(UIList):
 class SSM_OT_play_capture_items(Operator):
     bl_idname = "spritesheetmaker.play_capture_items"
     bl_label = "Play Capture Items"
-    bl_description = "Preview strip animations simultaneously"
+    bl_description = "Preview all animations associated with this strip"
     bl_options = {'UNDO'}
 
     def execute(self, context):
@@ -629,7 +637,7 @@ class SSM_OT_play_capture_items(Operator):
         return {'FINISHED'}
 class SSM_OT_add_capture_item(Operator):
     bl_idname = "spritesheetmaker.add_capture_item"
-    bl_label = "Add Capture Item"
+    bl_label = "Add New Capture Item"
     bl_description = "Add capture item"
     bl_options = {'UNDO'}
 
@@ -645,7 +653,7 @@ class SSM_OT_add_capture_item(Operator):
         return {'FINISHED'}
 class SSM_OT_remove_capture_item(Operator):
     bl_idname = "spritesheetmaker.remove_capture_item"
-    bl_label = "Remove Capture Item"
+    bl_label = "Remove Selected Capture Item"
     bl_description = "Remove capture item"
     bl_options = {'UNDO'}
 
@@ -692,7 +700,7 @@ class SSM_OT_CreateAutoCamera(Operator):
 class SSM_OT_PixelateImage(Operator):
     bl_idname = "spritesheetmaker.pixelate_image"
     bl_label = "Pixelate Image"
-    bl_description = "Pixelate given image"
+    bl_description = "Pixelate given test image based on the pixelation properties assigned"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -724,7 +732,7 @@ class SSM_OT_PixelateImage(Operator):
 class SSM_OT_CombineSprites(Operator):
     bl_idname = "spritesheetmaker.combine_sprites"
     bl_label = "Combine Sprites"
-    bl_description = "Combine multiple sprites into a single sprite sheet"
+    bl_description = "Combine all sprites from Temp Folder into a single sprite sheet"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -760,7 +768,7 @@ class SSM_OT_CombineSprites(Operator):
 class SSM_OT_CreateSingleSprite(Operator):
     bl_idname = "spritesheetmaker.create_single"
     bl_label = "Create Single Sprite"
-    bl_description = "Render out a single sprite"
+    bl_description = "Render out a single sprite of currently selected strip\nUseful for verifying settings before rendering the full sheet"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
@@ -817,7 +825,7 @@ class SSM_OT_CreateSingleSprite(Operator):
 class SSM_OT_CreateSheet(Operator):
     bl_idname = "spritesheetmaker.create_sheet"
     bl_label = "Create Sprite Sheet"
-    bl_description = "Create entire sheet"
+    bl_description = "Render out the entire sprite sheet"
     bl_options = {'REGISTER', 'UNDO'}
 
 
