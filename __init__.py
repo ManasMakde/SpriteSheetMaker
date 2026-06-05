@@ -8,10 +8,12 @@ bl_info = {
 
 import bpy
 import os
+import json
 from datetime import datetime
 from .modules.sprite_sheet_utils import *
 from .modules.combine_frames import *
 from bpy.types import Panel, Operator, PropertyGroup, Object, Action, UIList, Scene
+from bpy_extras.io_utils import ExportHelper, ImportHelper
 from bpy.props import (
     StringProperty,
     FloatProperty,
@@ -28,6 +30,7 @@ SPRITE_SHEET_MAKER = SpriteSheetMaker()
 SINGLE_SPRITE_NAME = "sprite"
 SPRITE_SHEET_NAME = "sprite_sheet"
 DEFAULT_OUTPUT_FOLDER_NAME = "SpriteSheetMaker"
+DEFAULT_SETTINGS_FILE_NAME = "ssm_settings.json"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_STRIP_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
@@ -120,7 +123,7 @@ class SSM_StripInfo(PropertyGroup):
     v_center_bone: StringProperty(name="Vertical Center Bone", default="")
     consider_armature_bones: BoolProperty(default=False, update=lambda self, ctx: self.sync_update(ctx, "consider_armature_bones"))
     pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, update=lambda self, ctx: self.sync_update(ctx, "pixels_per_meter"))
-    camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.05, min=0.0, soft_max=10.0, update=lambda self, ctx: self.sync_update(ctx, "camera_padding"))
+    camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, update=lambda self, ctx: self.sync_update(ctx, "camera_padding"))
 
 
     # Pixelation settings
@@ -236,22 +239,140 @@ class SSM_OT_key_listener(Operator):
         log("Starting key listener...")
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
-class SSM_OT_import_settings(Operator):
-    bl_idname = "spritesheetmaker.import_settings"
-    bl_label = "Import"
-    bl_description = "Import saved settings"
-    bl_options = {'UNDO'}
-
-    def execute(self, context):
-        return {'FINISHED'}
-class SSM_OT_export_settings(Operator):
+class SSM_OT_export_settings(Operator, ExportHelper):
     bl_idname = "spritesheetmaker.export_settings"
     bl_label = "Export"
     bl_description = "Export saved settings"
     bl_options = {'UNDO'}
 
+    filename_ext = ".json"
+    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
+
+    def get_export_data(self, context):
+        props = context.scene.sprite_sheet_maker_props
+        export_data = { "strips": [], "props": {} }
+        
+
+        # Store all strips
+        for strip in context.scene.animation_strips:
+
+            # Store all basic properties e.g. label, custom_camera, etc
+            s_data = {}
+            for p in strip.rna_type.properties:
+                if not p.is_readonly and p.identifier not in {"capture_items", "name"}:
+                    s_data[p.identifier] = getattr(strip, p.identifier)
+            
+            
+            # Store all capture items
+            s_data["capture_items"] = []
+            for item in strip.capture_items:
+                i_data = {}
+                i_data["object"] = item.object.name if item.object else ""
+                i_data["action"] = item.action.name if item.action else ""
+                i_data["slot"] =  item.slot
+                s_data["capture_items"].append(i_data)
+            
+
+            # Add to all strips data 
+            export_data["strips"].append(s_data)
+
+        
+        # Store all common properties
+        for p in props.rna_type.properties:
+            if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
+                export_data["props"][p.identifier] = getattr(props, p.identifier)
+
+
+        return export_data
+    def invoke(self, context, event):
+        self.filepath = DEFAULT_SETTINGS_FILE_NAME
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
     def execute(self, context):
-        return {'FINISHED'}
+
+        # Return if file path not set
+        if not self.filepath:
+            log("Export path is empty", True, "ERROR")
+            return {'CANCELLED'}
+
+
+        # Store into json file
+        try:
+            export_data = self.get_export_data(context)
+            with open(self.filepath, 'w') as file:
+                json.dump(export_data, file, indent=4)
+
+            log(f"Exported settings to {self.filepath}", True)
+            return {'FINISHED'}
+        except Exception as e:
+            log(f"Failed to export settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
+            return {'CANCELLED'}
+class SSM_OT_import_settings(Operator, ImportHelper):
+    bl_idname = "spritesheetmaker.import_settings"
+    bl_label = "Import"
+    bl_description = "Import saved settings"
+    bl_options = {'UNDO'}
+
+    filename_ext = ".json"
+    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
+
+    def load_import_data(self, context, data):
+        
+        # Get props & scene
+        props = context.scene.sprite_sheet_maker_props
+        scene = context.scene
+
+
+        # Clear previous animation strips
+        scene.animation_strips.clear()  
+
+
+        # Create all new strips
+        for strip_data in data.get("strips", []):
+
+            # Add new strip
+            strip = scene.animation_strips.add()
+
+            # Load all basic properties e.g. label, custom_camera, etc
+            for key, val in strip_data.items():
+                if key != "capture_items" and hasattr(strip, key):
+                    setattr(strip, key, val)
+            
+            # Load all capture items
+            for item_data in strip_data.get("capture_items", []):
+                item = strip.capture_items.add()
+                item.object = bpy.data.objects[item_data["object"]] if item_data.get("object") in bpy.data.objects else None
+                item.action = bpy.data.actions[item_data["action"]] if item_data.get("action") in bpy.data.actions else None
+                item.slot = item_data.get("slot", "")
+
+
+        # Load all common properties
+        for key, val in data.get("props", {}).items():
+            if hasattr(props, key):
+                setattr(props, key, val)
+    def invoke(self, context, event):
+        self.filepath = DEFAULT_SETTINGS_FILE_NAME
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    def execute(self, context):
+
+        # Return if file path does not exist
+        if not os.path.exists(self.filepath):
+            log("Import path does not exist", True, "ERROR")
+            return {'CANCELLED'}
+        
+
+        # Load from json file
+        try:
+            with open(self.filepath, 'r') as file:
+                data = json.load(file)
+            
+            self.load_import_data(context, data)
+            log(f"Imported settings from {self.filepath}")
+            return {'FINISHED'}
+        except Exception as e:
+            log(f"Failed to import settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
+            return {'CANCELLED'}
 class SSM_UL_AnimationStrips(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
         layout.label(text=item.label if item.label != "" else UNTITLED_STRIP_NAME, icon='SEQ_STRIP_DUPLICATE')
@@ -919,8 +1040,8 @@ class SSM_PT_MainPanel(Panel):
 
         # Import & Export Buttons
         row = layout.row(align=True)
-        row.operator("spritesheetmaker.import_settings", icon='IMPORT', text="Import")
         row.operator("spritesheetmaker.export_settings", icon='EXPORT', text="Export")
+        row.operator("spritesheetmaker.import_settings", icon='IMPORT', text="Import")
         layout.separator(factor=0.5)
         
 
