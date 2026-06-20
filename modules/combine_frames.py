@@ -2,6 +2,7 @@ import os
 from PIL import Image, ImageDraw, ImageFont
 from datetime import datetime
 from enum import Enum
+from .logging import *
 
 
 # Constants
@@ -53,61 +54,7 @@ class AssembleParam:
 
 
 # Methods
-def add_label_to_image(img_path:str, label_text:str, param:AssembleParam):
-    
-    # Extract from param
-    font_size = param.font_size
-    label_margin = param.label_margin
-    surrounding_margin_top = param.surrounding_margin[0]
-    surrounding_margin_right = param.surrounding_margin[1]
-    surrounding_margin_bottom = param.surrounding_margin[2]
-    surrounding_margin_left = param.surrounding_margin[3]
-
-
-    # Get original image
-    img = Image.open(img_path)
-
-
-    # Get dimensions for new image
-    new_img_width = img.width
-    new_img_height = img.height
-    font = ImageFont.load_default(font_size) if font_size !=0 else None
-    if(font_size != 0):
-        label_bbox = font.getbbox(label_text)
-        label_width = (label_bbox[2] - label_bbox[0])
-        label_height = (label_bbox[3] - label_bbox[1])
-        new_img_width = max(new_img_width, label_width)
-        new_img_height += label_height + label_margin
-    
-
-    # Add surrounding margins
-    new_img_width += surrounding_margin_left + surrounding_margin_right
-    new_img_height += surrounding_margin_top + surrounding_margin_bottom
-
-
-    # Create new image
-    new_img = Image.new(img.mode, (int(new_img_width), int(new_img_height)))
-    draw = ImageDraw.Draw(new_img)
-
-
-    # Paste label
-    label_top_offset = surrounding_margin_top
-    if(font_size != 0):
-        label_location_x = surrounding_margin_left 
-        label_location_y = surrounding_margin_top - label_bbox[1]
-        draw.text((label_location_x, label_location_y), label_text, fill="white", font=font, spacing = 0)
-        label_top_offset += label_height + label_margin
-    
-
-    # Paste original image
-    img_location_x = surrounding_margin_left
-    img_location_y = label_top_offset
-    new_img.paste(img, (int(img_location_x), int(img_location_y)))
-
-
-    # Save original image
-    new_img.save(img_path)
-def unique_path(target_path:str, is_file:bool=False, count_limit:int = 100000):
+def unique_path(target_path:str, count_limit:int = 100000):
 
     # Return if path already exists
     if not os.path.exists(target_path):
@@ -210,10 +157,11 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
 
 
     # Create sheet
-    print(f"[SpriteSheetMaker {datetime.now()}] Creating sprite sheet {sheet_width}x{sheet_height}")
+    log(f"Creating sprite sheet {sheet_width}x{sheet_height}")
     images = rows[0].images
     img_mode = images[0].mode if len(images)!=0 else DEFAULT_COLOR_MODE
-    sheet = Image.new(img_mode, (int(sheet_width), int(sheet_height)), (0, 0, 0, 0))
+    bg_color = (0, 0, 0, 0) if img_mode == "RGBA" else (0, 0, 0)
+    sheet = Image.new(img_mode, (int(sheet_width), int(sheet_height)), bg_color)
     draw = ImageDraw.Draw(sheet)
     font = ImageFont.load_default(param.font_size) if param.font_size !=0 else None
 
@@ -232,7 +180,7 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
             label_location_y = paste_height + row_data.label_offset[1]
             draw.text((label_location_x, label_location_y), row_data.label_text, fill="white", font=font, spacing = 0)
             paste_height += row_data.label_height + label_margin
-            print(f"[SpriteSheetMaker {datetime.now()}] Addded label '{row_data.label_text}' at ({label_location_x},{label_location_y})")
+            log(f"Addded label '{row_data.label_text}' at ({label_location_x},{label_location_y})")
 
 
         # Paste images
@@ -255,7 +203,7 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
             img_location_y = paste_height + offset_y
             sheet.paste(img, (int(img_location_x), int(img_location_y)))
             paste_width += large_width + image_margin
-            print(f"[SpriteSheetMaker {datetime.now()}] Addded image of frame {i + 1} at ({img_location_x},{img_location_y})")
+            log(f"Addded image of frame {i + 1} at ({img_location_x},{img_location_y})")
         
 
         # Increase paste height
@@ -268,9 +216,9 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
         
 
     # Save the final output sprite sheet
-    print(f"[SpriteSheetMaker {datetime.now()}] Saving sprite sheet to '{output_path}' ...")
+    log(f"Saving sprite sheet to '{output_path}' ...")
     sheet.save(output_path)
-    print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite sheet to {output_path}")
+    log(f"Successfully saved sprite sheet to {output_path}")
 def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int, output_path:str):
     
     # Extract from param
@@ -292,7 +240,7 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
     # Iterate and create strips
-    for row_count, row_data in enumerate(rows):
+    for _, row_data in enumerate(rows):
         img_count = len(row_data.images)
         gaps = image_margin * (img_count - 1)
         if(param.consistency == SpriteConsistency.INDIVIDUAL):
@@ -312,9 +260,10 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
         # Create strip
-        print(f"[SpriteSheetMaker {datetime.now()}] Creating strip {strip_width}x{strip_height}")
+        log(f"Creating strip {strip_width}x{strip_height}")
         img_mode = row_data.images[0].mode if len(row_data.images)!=0 else DEFAULT_COLOR_MODE
-        strip = Image.new(img_mode, (int(strip_width), int(strip_height)), (0, 0, 0, 0))
+        bg_color = (0, 0, 0, 0) if img_mode == "RGBA" else (0, 0, 0)
+        strip = Image.new(img_mode, (int(strip_width), int(strip_height)), bg_color)
         draw = ImageDraw.Draw(strip)
 
 
@@ -353,9 +302,9 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
         # Save strip
         ext = row_data.images[0].format if len(row_data.images) != 0 else DEFAULT_FILE_FORMAT
         strip_output_path = os.path.join(output_path, f"{row_data.label_text}.{ext.lower()}")
-        print(f"[SpriteSheetMaker {datetime.now()}] Saving strip to '{strip_output_path}' ...")
+        log(f"Saving strip to '{strip_output_path}' ...")
         strip.save(strip_output_path)
-        print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite strip to {strip_output_path}")
+        log(f"Successfully saved sprite strip to {strip_output_path}")
 def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int, output_path:str):
     
     # Extract from param
@@ -363,11 +312,6 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
     surrounding_margin_right = param.surrounding_margin[1]
     surrounding_margin_bottom = param.surrounding_margin[2]
     surrounding_margin_left = param.surrounding_margin[3]
-    font_size = param.font_size
-
-
-    # Create font
-    font = ImageFont.load_default(param.font_size) if param.font_size !=0 else None
 
     
     # Make sure folder exists
@@ -380,7 +324,6 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
         # Create row folder
         row_folder = os.path.join(output_path, f"{row_count}_{row_data.label_text}")
         create_folder(row_folder)
-        row_count += 1
 
 
         # Save images
@@ -400,9 +343,9 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
             # Create new image
-            print(f"[SpriteSheetMaker {datetime.now()}] Creating image {new_img_width}x{new_img_height}")
-            new_img = Image.new(img.mode, (int(new_img_width), int(new_img_height)), (0, 0, 0, 0))
-            draw = ImageDraw.Draw(new_img)
+            log(f"Creating image {new_img_width}x{new_img_height}")
+            bg_color = (0, 0, 0, 0) if img.mode == "RGBA" else (0, 0, 0)
+            new_img = Image.new(img.mode, (int(new_img_width), int(new_img_height)), bg_color)
             
 
             # Calculate offset based on alignment & consistency
@@ -416,9 +359,9 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
             # Save new image
             ext = img.format if img.format is not None else DEFAULT_FILE_FORMAT
             img_output_path = os.path.join(row_folder, f"{img_count}.{ext.lower()}")
-            print(f"[SpriteSheetMaker {datetime.now()}] Saving image to '{img_output_path}' ...")
+            log(f"Saving image to '{img_output_path}' ...")
             new_img.save(img_output_path)
-            print(f"[SpriteSheetMaker {datetime.now()}] Successfully saved sprite strip to {img_output_path}")
+            log(f"Successfully saved sprite strip to {img_output_path}")
 def assemble_images(param:AssembleParam, input_folder_path:str, output_path:str):
 
     # Load font and Get all sorted action sub folders
@@ -427,7 +370,7 @@ def assemble_images(param:AssembleParam, input_folder_path:str, output_path:str)
         [folder for folder in os.listdir(input_folder_path) if os.path.isdir(os.path.join(input_folder_path, folder))],
         key=lambda x: int(x.split('_')[0])
     )
-    print(f"[SpriteSheetMaker {datetime.now()}] Found {len(action_folders)} action sub folders")
+    log(f"Found {len(action_folders)} action sub folders")
 
 
     # Assign row data from folders 

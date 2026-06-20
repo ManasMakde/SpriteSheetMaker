@@ -9,21 +9,12 @@ bl_info = {
 import bpy
 import os
 import json
-from datetime import datetime
-from .modules.sprite_sheet_utils import *
-from .modules.combine_frames import *
 from bpy.types import Panel, Operator, PropertyGroup, Object, Action, UIList, Scene
 from bpy_extras.io_utils import ExportHelper, ImportHelper
-from bpy.props import (
-    StringProperty,
-    FloatProperty,
-    BoolProperty,
-    PointerProperty,
-    CollectionProperty,
-    IntProperty,
-    EnumProperty
-)
-
+from bpy.props import StringProperty, FloatProperty,BoolProperty, PointerProperty, CollectionProperty, IntProperty, EnumProperty
+from .modules.sprite_sheet_utils import *
+from .modules.combine_frames import *
+from .modules.logging import *
 
 # Constants
 SPRITE_SHEET_MAKER = SpriteSheetMaker()
@@ -35,6 +26,7 @@ PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_STRIP_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
 EXCLUDE_SYNC_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "in_sync"}
+NON_SERIALIZABLE_PROPERTIES = {"custom_camera", "h_center_object", "v_center_object"} 
 
 
 # Classes
@@ -72,28 +64,26 @@ class SSM_CaptureItem(PropertyGroup):
 class SSM_StripInfo(PropertyGroup):
 
     def update_label_from_action(self):
-        # Iterate through all items
-        action_count = 0
-        new_label = ""
-        for item in self.capture_items:
-            if item.action:
-                new_label = item.action.name
-                action_count +=1
-            
-            if action_count > 1:
-                break
         
+        # Return if label already assigned
+        if(self.label != ""):
+            return
 
-        # Assign new label if only 1 action or empty label
-        if(action_count <= 1 or self.label.strip() == ""):
-            self.label = new_label
+        
+        # Get first non empty action name 
+        for item in self.capture_items:
+            if not item.action or item.action.name == "":
+                continue
+            
+            self.label = item.action.name
+            return
     def sync_update(self, context, prop_name):
 
         strip = get_current_strip()
         if not strip.in_sync:
             return
     
-        SSM_OT_sync_strips.sync(context, {prop_name})
+        SSM_OT_SyncStrips.sync(context, {prop_name})
 
     in_sync: BoolProperty(name="Sync Strip", default=True)
     label: StringProperty(name="Label", default="", description="The text that will be added on top of the strip in the sprite sheet")
@@ -113,19 +103,25 @@ class SSM_StripInfo(PropertyGroup):
             (CameraDirection.Z.value, "Z", "Camera pointing along the Z axis"),
             (CameraDirection.NEG_X.value, "-X", "Camera pointing along the negative X axis"),
             (CameraDirection.NEG_Y.value, "-Y", "Camera pointing along the negative Y axis"),
-            (CameraDirection.NEG_Z.value, "-Z", "Camera pointing along the negative Z axis")
+            (CameraDirection.NEG_Z.value, "-Z", "Camera pointing along the negative Z axis"),
+            (CameraDirection.CUSTOM.value, "Custom", "Custom camera orientation")
         ],
         default=CameraDirection.NEG_X.value,
         update=lambda self, ctx: self.sync_update(ctx, "camera_direction")
     )
+    camera_orbit_z: FloatProperty(name="Orbit-Z", default=0.0, subtype='ANGLE', description="Orbit rotation around Z axis of capture objects")
+    camera_orbit_x: FloatProperty(name="Orbit-X", default=0.0, subtype='ANGLE', description="Orbit rotation around X axis of capture objects")
+    camera_roll: FloatProperty(name="Roll", default=0.0, subtype='ANGLE', description="Roll rotation around cameras on pointing axis")
+
     h_center_object: PointerProperty(name="Horizontal Center Object", type=Object, description="Object whose origin will be used as the horizontal center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "h_center_object"))
-    h_center_bone: StringProperty(name="Horizontal Center Bone", default="", description="Bone whose origin will be used as the horizontal center for each sprite frame")
+    h_center_bone: StringProperty(name="Horizontal Center Bone", default="", description="Bone whose origin will be used as the horizontal center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "h_center_bone"))
     v_center_object: PointerProperty(name="Vertical Center Object", type=Object, description="Object whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_object"))
-    v_center_bone: StringProperty(name="Vertical Center Bone", default="", description="Bone whose origin will be used as the vertically center for each sprite frame")
+    v_center_bone: StringProperty(name="Vertical Center Bone", default="", description="Bone whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_bone"))
     
     consider_armature_bones: BoolProperty(default=False, description="Include all armature bones when calculating auto-capture camera bounds to ensure they remain within camera view", update=lambda self, ctx: self.sync_update(ctx, "consider_armature_bones"))
     pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, description="Number of pixels rendered per one world space meter unit", update=lambda self, ctx: self.sync_update(ctx, "pixels_per_meter"))
-    camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding"))
+    camera_padding_h: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding_h"))
+    camera_padding_v: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding_v"))
 
 
     # Pixelation settings
@@ -215,7 +211,21 @@ class SSM_Properties(PropertyGroup):
     # Collapsible section toggles
     show_strip_info: BoolProperty(name="Show Strip Info", default=False)
     show_output_settings: BoolProperty(name="Show Output Settings", default=False)
-class SSM_OT_key_listener(Operator):
+class SSM_UL_AnimationStrips(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+        layout.label(text=item.label if item.label != "" else UNTITLED_STRIP_NAME, icon='SEQ_STRIP_DUPLICATE')
+class SSM_UL_CaptureItems(UIList):
+    def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+
+        split = layout.split(factor=1/3, align=True)
+        col_obj = split.column(align=True)
+        col_action = split.column(align=True)
+        col_slot = split.column(align=True)
+
+        col_obj.prop(item, "object", text="")
+        col_action.prop(item, "action", text="")
+        col_slot.prop(item, "slot", text="Slot")
+class SSM_OT_KeyListener(Operator):
     bl_idname = "spritesheetmaker.key_listener"
     bl_label = "Listen for Keys"
     
@@ -231,9 +241,9 @@ class SSM_OT_key_listener(Operator):
 
         # Check if alt key pressed or released
         if event.value == 'PRESS' and not self.is_alt_pressed:
-            SSM_OT_key_listener.is_alt_pressed = True
+            SSM_OT_KeyListener.is_alt_pressed = True
         elif event.value == 'RELEASE' and self.is_alt_pressed:
-            SSM_OT_key_listener.is_alt_pressed = False
+            SSM_OT_KeyListener.is_alt_pressed = False
 
         return {'PASS_THROUGH'}
     def invoke(self, context, event):
@@ -247,144 +257,10 @@ class SSM_OT_key_listener(Operator):
         log("Starting key listener...")
         context.window_manager.modal_handler_add(self)
         return {'RUNNING_MODAL'}
-class SSM_OT_export_settings(Operator, ExportHelper):
-    bl_idname = "spritesheetmaker.export_settings"
-    bl_label = "Export"
-    bl_description = "Save current settings as .json file to import later"
-    bl_options = {'UNDO'}
-
-    filename_ext = ".json"
-    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
-
-    def get_export_data(self, context):
-        props = context.scene.sprite_sheet_maker_props
-        export_data = { "strips": [], "props": {} }
-        
-
-        # Store all strips
-        for strip in context.scene.animation_strips:
-
-            # Store all basic properties e.g. label, custom_camera, etc
-            s_data = {}
-            for p in strip.rna_type.properties:
-                if not p.is_readonly and p.identifier not in {"capture_items", "name"}:
-                    s_data[p.identifier] = getattr(strip, p.identifier)
-            
-            
-            # Store all capture items
-            s_data["capture_items"] = []
-            for item in strip.capture_items:
-                i_data = {}
-                i_data["object"] = item.object.name if item.object else ""
-                i_data["action"] = item.action.name if item.action else ""
-                i_data["slot"] =  item.slot
-                s_data["capture_items"].append(i_data)
-            
-
-            # Add to all strips data 
-            export_data["strips"].append(s_data)
-
-        
-        # Store all common properties
-        for p in props.rna_type.properties:
-            if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
-                export_data["props"][p.identifier] = getattr(props, p.identifier)
 
 
-        return export_data
-    def invoke(self, context, event):
-        self.filepath = DEFAULT_SETTINGS_FILE_NAME
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-    def execute(self, context):
-
-        # Return if file path not set
-        if not self.filepath:
-            log("Export path is empty", True, "ERROR")
-            return {'CANCELLED'}
-
-
-        # Store into json file
-        try:
-            export_data = self.get_export_data(context)
-            with open(self.filepath, 'w') as file:
-                json.dump(export_data, file, indent=4)
-
-            log(f"Exported settings to {self.filepath}", True)
-            return {'FINISHED'}
-        except Exception as e:
-            log(f"Failed to export settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
-            return {'CANCELLED'}
-class SSM_OT_import_settings(Operator, ImportHelper):
-    bl_idname = "spritesheetmaker.import_settings"
-    bl_label = "Import"
-    bl_description = "Import saved settings from .json file"
-    bl_options = {'UNDO'}
-
-    filename_ext = ".json"
-    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
-
-    def load_import_data(self, context, data):
-        
-        # Get props & scene
-        props = context.scene.sprite_sheet_maker_props
-        scene = context.scene
-
-
-        # Clear previous animation strips
-        scene.animation_strips.clear()  
-
-
-        # Create all new strips
-        for strip_data in data.get("strips", []):
-
-            # Add new strip
-            strip = scene.animation_strips.add()
-
-            # Load all basic properties e.g. label, custom_camera, etc
-            for key, val in strip_data.items():
-                if key != "capture_items" and hasattr(strip, key):
-                    setattr(strip, key, val)
-            
-            # Load all capture items
-            for item_data in strip_data.get("capture_items", []):
-                item = strip.capture_items.add()
-                item.object = bpy.data.objects[item_data["object"]] if item_data.get("object") in bpy.data.objects else None
-                item.action = bpy.data.actions[item_data["action"]] if item_data.get("action") in bpy.data.actions else None
-                item.slot = item_data.get("slot", "")
-
-
-        # Load all common properties
-        for key, val in data.get("props", {}).items():
-            if hasattr(props, key):
-                setattr(props, key, val)
-    def invoke(self, context, event):
-        self.filepath = DEFAULT_SETTINGS_FILE_NAME
-        context.window_manager.fileselect_add(self)
-        return {'RUNNING_MODAL'}
-    def execute(self, context):
-
-        # Return if file path does not exist
-        if not os.path.exists(self.filepath):
-            log("Import path does not exist", True, "ERROR")
-            return {'CANCELLED'}
-        
-
-        # Load from json file
-        try:
-            with open(self.filepath, 'r') as file:
-                data = json.load(file)
-            
-            self.load_import_data(context, data)
-            log(f"Imported settings from {self.filepath}")
-            return {'FINISHED'}
-        except Exception as e:
-            log(f"Failed to import settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
-            return {'CANCELLED'}
-class SSM_UL_AnimationStrips(UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
-        layout.label(text=item.label if item.label != "" else UNTITLED_STRIP_NAME, icon='SEQ_STRIP_DUPLICATE')
-class SSM_OT_duplicate_strip(Operator):
+# Side Bar Buttons
+class SSM_OT_DuplicateStrip(Operator):
     bl_idname = "spritesheetmaker.duplicate_strip"
     bl_label = "Duplicate Strip"
     bl_description = "Duplicate the selected animation strip"
@@ -431,7 +307,7 @@ class SSM_OT_duplicate_strip(Operator):
 
 
         return {'FINISHED'}
-class SSM_OT_add_strip(Operator):
+class SSM_OT_AddStrip(Operator):
     bl_idname = "spritesheetmaker.add_strip"
     bl_label = "Add Strip"
     bl_description = "Add new animation strip"
@@ -439,12 +315,13 @@ class SSM_OT_add_strip(Operator):
 
     def execute(self, context):
         scene = context.scene
-        new = scene.animation_strips.add()
-        new.frame_start = 1
-        new.frame_end = 250
+        scene.animation_strips.add()
+        # new.frame_start = 1
+        # new.frame_end = 250
+        SSM_OT_SyncStrips.sync(context)
         scene.strip_index = len(scene.animation_strips) - 1
         return {'FINISHED'}
-class SSM_OT_remove_strip(Operator):
+class SSM_OT_RemoveStrip(Operator):
     bl_idname = "spritesheetmaker.remove_strip"
     bl_label = "Remove Strip"
     bl_description = "Remove selected animation strip"
@@ -457,7 +334,7 @@ class SSM_OT_remove_strip(Operator):
             scene.animation_strips.remove(idx)
             scene.strip_index = max(0, min(len(scene.animation_strips) - 1, idx - 1))
         return {'FINISHED'}
-class SSM_OT_move_strip(Operator):
+class SSM_OT_MoveStrip(Operator):
     bl_idname = "spritesheetmaker.move_strip"
     bl_label = "Move Strip"
     bl_description = "Move animation strip up or down"
@@ -484,7 +361,7 @@ class SSM_OT_move_strip(Operator):
             scene.strip_index += 1
 
         return {"FINISHED"}
-class SSM_OT_sync_strips(Operator):
+class SSM_OT_SyncStrips(Operator):
     bl_idname = "spritesheetmaker.sync_strips"
     bl_label = "Sync Strips"
     bl_description = "All strips which have this enabled will have their properties in sync with each other\nAlt + Click to assign properties of current strip to all other strips which are in sync"
@@ -513,54 +390,63 @@ class SSM_OT_sync_strips(Operator):
     @staticmethod
     def _sync_impl(context, properties=None):
         
-        # Return if no strips
+        # Get synced strip
         scene = context.scene
         strips = scene.animation_strips
         curr_idx = scene.strip_index
-        if curr_idx < 0 or curr_idx >= len(strips) or len(strips) <= 1:
+        if(strips[curr_idx].in_sync):
+            synced_strip = strips[curr_idx]
+        else:
+            _, synced_strip = get_synced_strip()
+
+
+        # Return if no synced strip
+        if(synced_strip == None):
             return
 
 
         # Sync properties to all other strips
-        curr_strip = strips[curr_idx]
         for i, dest_strip in enumerate(strips):
             if i == curr_idx or not dest_strip.in_sync:
                 continue
             
-            SSM_OT_sync_strips._copy_properties(curr_strip, dest_strip, properties)
+            SSM_OT_SyncStrips._copy_properties(synced_strip, dest_strip, properties)
             
 
     @staticmethod
     def sync(context, properties=None):
 
         # To avoid infinite recursion
-        if SSM_OT_sync_strips._is_syncing:
+        if SSM_OT_SyncStrips._is_syncing:
             return
         
 
         # Mark as sync started
-        SSM_OT_sync_strips._is_syncing = True
+        SSM_OT_SyncStrips._is_syncing = True
 
 
         # Sync
         try:
-            SSM_OT_sync_strips._sync_impl(context, properties)
-            log(f"Synced '{properties}' across all strips!")
+            SSM_OT_SyncStrips._sync_impl(context, properties)
+            log(f"Synced {properties if properties != None else 'All'} across all strips!")
 
         except Exception as e:
             log(f"Failed to sync properties '{properties}' across all strips! Error: {e} \n {traceback.format_exc()}")
 
     
         # Mark as sync complete
-        SSM_OT_sync_strips._is_syncing = False
+        SSM_OT_SyncStrips._is_syncing = False
 
 
     def execute(self, context):
 
         # Toggle in sync button
         curr_strip = get_current_strip()
-        if(curr_strip):
-            curr_strip.in_sync = not curr_strip.in_sync
+        if(not curr_strip):
+            return {'FINISHED'}
+
+
+        curr_strip.in_sync = not curr_strip.in_sync
         
 
         # Return if toggled off or nothing to sync
@@ -569,29 +455,18 @@ class SSM_OT_sync_strips(Operator):
         
 
         # If alt pressed; synchronize all other strips with this strip
-        if(SSM_OT_key_listener.is_alt_pressed):
-            SSM_OT_sync_strips.sync(context)
+        if(SSM_OT_KeyListener.is_alt_pressed):
+            SSM_OT_SyncStrips.sync(context)
             return {'FINISHED'}
 
 
         # Sync properties of this strip with others
-        synced_strip = get_synced_strip()
-        SSM_OT_sync_strips._copy_properties(synced_strip, curr_strip)
+        _, synced_strip = get_synced_strip()
+        SSM_OT_SyncStrips._copy_properties(synced_strip, curr_strip)
 
 
         return {'FINISHED'}
-class SSM_UL_CaptureItems(UIList):
-    def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
-
-        split = layout.split(factor=1/3, align=True)
-        col_obj = split.column(align=True)
-        col_action = split.column(align=True)
-        col_slot = split.column(align=True)
-
-        col_obj.prop(item, "object", text="")
-        col_action.prop(item, "action", text="")
-        col_slot.prop(item, "slot", text="Slot")
-class SSM_OT_play_capture_items(Operator):
+class SSM_OT_PlayCaptureItems(Operator):
     bl_idname = "spritesheetmaker.play_capture_items"
     bl_label = "Play Capture Items"
     bl_description = "Preview all animations associated with this strip"
@@ -599,9 +474,15 @@ class SSM_OT_play_capture_items(Operator):
 
     def execute(self, context):
 
-        # Return if no capture items
+        # Return if no valid strip selected
         scene = context.scene
         si = scene.strip_index
+        if si < 0 or si >= len(scene.animation_strips):
+            log("No valid strip selected to play capture items!")
+            return {'CANCELLED'}
+
+        
+        # Return if no capture items
         strip = scene.animation_strips[si]
         if si < 0 or si >= len(scene.animation_strips) or len(strip.capture_items) == 0:
             return {'CANCELLED'}
@@ -635,7 +516,7 @@ class SSM_OT_play_capture_items(Operator):
         
         
         return {'FINISHED'}
-class SSM_OT_add_capture_item(Operator):
+class SSM_OT_AddCaptureItem(Operator):
     bl_idname = "spritesheetmaker.add_capture_item"
     bl_label = "Add New Capture Item"
     bl_description = "Add capture item"
@@ -651,7 +532,7 @@ class SSM_OT_add_capture_item(Operator):
         strip.capture_items.add()
         strip.capture_item_index = len(strip.capture_items) - 1
         return {'FINISHED'}
-class SSM_OT_remove_capture_item(Operator):
+class SSM_OT_RemoveCaptureItem(Operator):
     bl_idname = "spritesheetmaker.remove_capture_item"
     bl_label = "Remove Selected Capture Item"
     bl_description = "Remove capture item"
@@ -671,6 +552,170 @@ class SSM_OT_remove_capture_item(Operator):
 
 
 # Primary Buttons
+class SSM_OT_ExportSettings(Operator, ExportHelper):
+    bl_idname = "spritesheetmaker.export_settings"
+    bl_label = "Export"
+    bl_description = "Save current settings as .json file to import later"
+    bl_options = {'UNDO'}
+
+    filename_ext = ".json"
+    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
+
+    def get_export_data(self, context):
+        props = context.scene.sprite_sheet_maker_props
+        export_data = { "strips": [], "props": {} }
+        
+
+        # Store all strips
+        for strip in context.scene.animation_strips:
+
+            # Store all basic properties e.g. label, custom_camera, etc
+            s_data = {}
+            for p in strip.rna_type.properties:
+                if not p.is_readonly and p.identifier not in {"capture_items", "name"} and p.identifier not in NON_SERIALIZABLE_PROPERTIES:
+                    s_data[p.identifier] = getattr(strip, p.identifier)
+            
+
+            # Store object pointer properties as names since objects are not json serializable
+            for prop_name in NON_SERIALIZABLE_PROPERTIES:
+                obj = getattr(strip, prop_name)
+                s_data[prop_name] = obj.name if obj else ""
+            
+            
+            # Store all capture items
+            s_data["capture_items"] = []
+            for item in strip.capture_items:
+                i_data = {}
+                i_data["object"] = item.object.name if item.object else ""
+                i_data["action"] = item.action.name if item.action else ""
+                i_data["slot"] =  item.slot
+                s_data["capture_items"].append(i_data)
+            
+
+            # Add to all strips data 
+            export_data["strips"].append(s_data)
+
+        
+        # Store all common properties
+        for p in props.rna_type.properties:
+            if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
+                export_data["props"][p.identifier] = getattr(props, p.identifier)
+
+
+        return export_data
+    def invoke(self, context, event):
+        self.filepath = DEFAULT_SETTINGS_FILE_NAME
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    def execute(self, context):
+
+        # Return if file path not set
+        if not self.filepath:
+            log("Export path is empty", True, "ERROR")
+            return {'CANCELLED'}
+
+
+        # Store into json file
+        try:
+            export_data = self.get_export_data(context)
+            with open(self.filepath, 'w') as file:
+                json.dump(export_data, file, indent=4)
+
+            log(f"Exported settings to {self.filepath}", True)
+            return {'FINISHED'}
+        except Exception as e:
+            log(f"Failed to export settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
+            return {'CANCELLED'}
+class SSM_OT_ImportSettings(Operator, ImportHelper):
+    bl_idname = "spritesheetmaker.import_settings"
+    bl_label = "Import"
+    bl_description = "Import saved settings from .json file"
+    bl_options = {'UNDO'}
+
+    filename_ext = ".json"
+    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
+
+
+    def load_import_data(self, context, data):
+        
+        # Get props & scene
+        props = context.scene.sprite_sheet_maker_props
+        scene = context.scene
+
+
+        # Clear previous animation strips
+        scene.animation_strips.clear()  
+
+
+        # Create all new strips
+        for strip_data in data.get("strips", []):
+
+            # Add new strip
+            strip = scene.animation_strips.add()
+
+            # Load all basic properties e.g. label, etc
+            for key, val in strip_data.items():
+                if key != "capture_items" and key not in NON_SERIALIZABLE_PROPERTIES and hasattr(strip, key):
+                    setattr(strip, key, val)
+
+            # Load object pointer properties by resolving stored name back to object
+            for prop_name in NON_SERIALIZABLE_PROPERTIES:
+                obj_name = strip_data.get(prop_name, "")
+                setattr(strip, prop_name, bpy.data.objects[obj_name] if obj_name in bpy.data.objects else None)
+            
+            # Load all capture items
+            for item_data in strip_data.get("capture_items", []):
+                item = strip.capture_items.add()
+
+                # Add object to capture item
+                if(item_data.get("object") in bpy.data.objects):
+                    item.object = bpy.data.objects[item_data["object"]]
+                else:
+                    missing_obj = item_data.get('object')
+                    log(f"Missing object '{missing_obj}' found while importing!")
+                    item.object = None
+
+
+                # Add action to capture item
+                if(item_data.get("action") in bpy.data.actions):
+                    item.action = bpy.data.actions[item_data["action"]]
+                else:
+                    missing_action = item_data.get('action')
+                    log(f"Missing action '{missing_action}' found while importing!")
+                    item.action = None
+
+                
+                # Add slot to capture item
+                item.slot = item_data.get("slot", "")
+
+
+        # Load all common properties
+        for key, val in data.get("props", {}).items():
+            if hasattr(props, key):
+                setattr(props, key, val)
+    def invoke(self, context, event):
+        self.filepath = DEFAULT_SETTINGS_FILE_NAME
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    def execute(self, context):
+
+        # Return if file path does not exist
+        if not os.path.exists(self.filepath):
+            log("Import path does not exist", True, "ERROR")
+            return {'CANCELLED'}
+        
+
+        # Load from json file
+        try:
+            with open(self.filepath, 'r') as file:
+                data = json.load(file)
+            
+            self.load_import_data(context, data)
+            log(f"Imported settings from {self.filepath}")
+            return {'FINISHED'}
+        except Exception as e:
+            log(f"Failed to import settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
+            return {'CANCELLED'}
 class SSM_OT_CreateAutoCamera(Operator):
     bl_idname = "spritesheetmaker.create_auto_camera"
     bl_label = "Create Auto Camera"
@@ -684,15 +729,15 @@ class SSM_OT_CreateAutoCamera(Operator):
         cam_obj = curr_strip.custom_camera
 
 
-        # Create new camera if no custom camera assigned
-        if(cam_obj is None):
-            cam_data = bpy.data.cameras.new(name=AUTO_CAMERA_NAME)
-            cam_obj = bpy.data.objects.new(AUTO_CAMERA_NAME, cam_data)
-            bpy.context.collection.objects.link(cam_obj)
+        # Return if empty capture items
+        objects = get_objects_to_capture(curr_strip)
+        if(len(objects) == 0):
+            log(f"Cannot create auto camera due to empty 'Capture Items' in '{get_strip_label(curr_strip)}' Strip!", True, "CANCEL")
+            return {'FINISHED'}
 
 
         # Set it up based on auto parameters
-        param = auto_capture_param_from_props()
+        param = gen_auto_capture_param(curr_strip)
         setup_auto_camera(param, cam_obj)
 
 
@@ -718,7 +763,7 @@ class SSM_OT_PixelateImage(Operator):
         # Combine images together into single file and paste in output
         try:
             # Generate param
-            param = gen_pixelate_param()
+            param = gen_pixelate_param(curr_strip)
             pixelated_output_path = get_pixelated_img_path()
             pixelate_images({ curr_strip.pixelate_image_path:pixelated_output_path }, param)
 
@@ -833,7 +878,8 @@ class SSM_OT_CreateSheet(Operator):
     def check_strip(strip, check_actions = True):
 
         # Return if empty capture items
-        if(len(strip.capture_items) == 0):
+        objects = get_objects_to_capture(strip)
+        if(strip.to_auto_capture and len(objects) == 0):
             log(f"Empty 'Capture Items' in '{get_strip_label(strip)}' Strip!", True, "CANCEL")
             return False
 
@@ -862,7 +908,7 @@ class SSM_OT_CreateSheet(Operator):
 
         # Return if manual cameras has not been set
         if(not strip.to_auto_capture and ((strip.custom_camera is None) or (strip.custom_camera.type != 'CAMERA'))):
-            log(f"Either set 'Custom Camera'\nor enable 'To Auto Capture'\nin '{get_strip_label(strip)}' Strip!", True, "CANCEL")
+            log(f"Either set 'Custom Camera' or enable 'To Auto Capture'\nin '{get_strip_label(strip)}' Strip!", True, "CANCEL")
             return False
 
 
@@ -965,6 +1011,7 @@ class SSM_PT_MainPanel(Panel):
         # To Auto Capture
         row_box.prop(strip, "to_auto_capture")
         if strip.to_auto_capture:
+
             # Indent sub props
             sub_box = row_box.row().split(factor=0.02)
             sub_box.label(text="")
@@ -975,9 +1022,15 @@ class SSM_PT_MainPanel(Panel):
             split.label(text="Camera Direction")
             split.prop(strip, "camera_direction", text="")
 
+            # Custom Direction
+            if strip.camera_direction == CameraDirection.CUSTOM.value:
+                sub_col.prop(strip, "camera_orbit_z")
+                sub_col.prop(strip, "camera_orbit_x")
+                sub_col.prop(strip, "camera_roll")
+
             # Horizontal Center Object
             split = sub_col.split(factor=0.40)
-            split.label(text="H Center Obj")
+            split.label(text="Center Obj H")
             col = split.column(align=True)
             col.prop(strip, "h_center_object", text="")
             if strip.h_center_object and strip.h_center_object.type == 'ARMATURE':
@@ -985,7 +1038,7 @@ class SSM_PT_MainPanel(Panel):
 
             # Vertical Center Object
             split = sub_col.split(factor=0.40)
-            split.label(text="V Center Obj")
+            split.label(text="Center Obj V")
             col = split.column(align=True)
             col.prop(strip, "v_center_object", text="")
             if strip.v_center_object and strip.v_center_object.type == 'ARMATURE':
@@ -993,8 +1046,9 @@ class SSM_PT_MainPanel(Panel):
             
             # Consider Armature Bones
             sub_col.prop(strip, "consider_armature_bones", text="Consider Armature Bones")
+            sub_col.prop(strip, "camera_padding_h", text="Camera Padding H")  # Camera Padding Horizontal
+            sub_col.prop(strip, "camera_padding_v", text="Camera Padding V")  # Camera Padding Vertical
             sub_col.prop(strip, "pixels_per_meter", text="Pixels Per Meter")  # Pixels Per Meter 
-            sub_col.prop(strip, "camera_padding", text="Camera Padding")  # Camera Padding 
 
             # Create Auto Camera Button
             sub_col.separator(factor=0.25)
@@ -1086,28 +1140,11 @@ class SSM_PT_MainPanel(Panel):
         # Strip Info
         has_strip = len(scene.animation_strips) > 0 and 0 <= scene.strip_index < len(scene.animation_strips)
         box = layout.box()
-        box.prop(props, "show_strip_info", icon="TRIA_DOWN" if props.show_strip_info else "TRIA_RIGHT", emboss=False, text=f"Strip Info{'' if has_strip else ' (Add Strip First)'}")
+        box.prop(props, "show_strip_info", icon="TRIA_DOWN" if props.show_strip_info else "TRIA_RIGHT", emboss=False, text=f"Strip Info{'' if has_strip else ' (Add atleast one strip)'}")
         if(props.show_strip_info):
             box.enabled = has_strip
             if has_strip:
                 self.draw_strip_info(context, scene, box)
-            else:
-                # Dummy Stuff
-                split = box.split(factor=0.25)
-                split.label(text="Label")
-                row_label = split.row(align=False)
-                col_label_prop = row_label.column(align=True)
-                col_label_prop.prop(scene, 'dummy_label', text='')
-                col_sync_btn = row_label.column(align=True)
-                col_sync_btn.operator("spritesheetmaker.sync_strips", text="", icon='INTERNET')
-                box.label(text="Capture Items")
-                row_layout = box.row()
-                row_layout.template_list('SSM_UL_CaptureItems', '', scene, 'dummy_items', scene, 'dummy_index', rows=3, maxrows=3)
-                col = row_layout.column(align=True)
-                col.operator('spritesheetmaker.play_capture_items', icon='PLAY', text='')
-                col.separator()
-                col.operator('spritesheetmaker.add_capture_item', icon='ADD', text='')
-                col.operator('spritesheetmaker.remove_capture_item', icon='REMOVE', text='')
 
 
         # Output Settings (Collapsible)
@@ -1202,36 +1239,46 @@ def gen_assemble_param():
 
     # Set assemble parameters
     param = AssembleParam()
-    param.font_size = props.label_font_size
+    for prop in param.__dict__:
+        if hasattr(props, prop) and prop not in ["surrounding_margin", "consistency", "align", "combine_mode"]:
+            setattr(param, prop, getattr(props, prop))
+    
+
+    # Manual overrides for Enums and Tuples
     param.surrounding_margin = (props.surrounding_margin_top, props.surrounding_margin_right, props.surrounding_margin_bottom, props.surrounding_margin_left)
-    param.label_margin = props.label_margin
-    param.image_margin = props.image_margin
     param.consistency = SpriteConsistency(props.sprite_consistency)
     param.align = SpriteAlign(props.sprite_align)
     param.combine_mode = CombineMode(props.combine_mode)
+    param.font_size = props.label_font_size
+
 
     return param
 def gen_auto_capture_param(strip):
 
     param = AutoCaptureParam()
     param.objects = get_objects_to_capture(strip)
+    
+
+    # Auto copy matching properties
+    for prop in param.__dict__:
+        if hasattr(strip, prop) and prop not in ["objects", "camera_direction"]:
+            setattr(param, prop, getattr(strip, prop))
+            
+
+    # Manual override for Enum
     param.camera_direction = CameraDirection(strip.camera_direction)
-    param.h_center_object = strip.h_center_object
-    param.h_center_bone = strip.h_center_bone
-    param.v_center_object = strip.v_center_object
-    param.v_center_bone = strip.v_center_bone
-    param.consider_armature_bones = strip.consider_armature_bones
-    param.pixels_per_meter = strip.pixels_per_meter
-    param.camera_padding = strip.camera_padding
+
 
     return param
 def gen_pixelate_param(strip):
 
     param = PixelateParam()
-    param.pixelation_amount = strip.pixelation_amount
-    param.color_amount = strip.color_amount
-    param.min_alpha = strip.min_alpha
-    param.alpha_step = strip.alpha_step
+    
+
+    # Auto copy all matching properties
+    for prop in param.__dict__:
+        if hasattr(strip, prop):
+            setattr(param, prop, getattr(strip, prop))
 
 
     return param
@@ -1321,13 +1368,13 @@ def get_sprite_sheet_path(mode, single_sprite = False):
 
     # Assign file/folder name
     if(single_sprite):
-        base_name = SINGLE_SPRITE_NAME
+        base_name = f"{SINGLE_SPRITE_NAME}.{file_ext}"
     else:
-        base_name = SPRITE_SHEET_NAME if mode == CombineMode.SHEET.value else DEFAULT_OUTPUT_FOLDER_NAME
+        base_name = f"{SPRITE_SHEET_NAME}.{file_ext}" if mode == CombineMode.SHEET.value else DEFAULT_OUTPUT_FOLDER_NAME
 
 
     # Get full path
-    sprite_sheet_path = unique_path(f"{props.output_folder}/{base_name}.{file_ext}")
+    sprite_sheet_path = unique_path(f"{props.output_folder}/{base_name}")
 
 
     return sprite_sheet_path
@@ -1336,7 +1383,13 @@ def get_objects_to_capture(strip):
     # Get objects in strip
     objects = set()
     for item in strip.capture_items:
+
+        # Skip if invalid object
         if(item.object is None):
+            continue
+
+        # Skip if not to consider armature
+        if(item.object.type == 'ARMATURE' and not strip.consider_armature_bones):
             continue
         
         objects.add(item.object)
@@ -1347,11 +1400,11 @@ def get_synced_strip():
     scene = bpy.context.scene
     strips = scene.animation_strips
 
-    for strip in strips:
+    for i, strip in enumerate(strips):
         if(strip.in_sync):
-            return strip
+            return i, strip
 
-    return None
+    return -1, None
 def are_any_in_sync():
     scene = bpy.context.scene
     strips = scene.animation_strips
@@ -1361,12 +1414,6 @@ def are_any_in_sync():
             return True
 
     return False
-def log(message, show_popup = False, icon="INFO"):
-
-    print(f"[SpriteSheetMaker {datetime.now()}] {message}")
-
-    if(show_popup):
-        bpy.ops.spritesheetmaker.message_popup('INVOKE_DEFAULT', **{ "message_heading": message,  "message_icon" : icon })
 
 
 # Initialize Classes
@@ -1375,19 +1422,19 @@ classes = (
     SSM_Properties,
     SSM_CaptureItem,
     SSM_StripInfo,
-    SSM_OT_key_listener,
-    SSM_OT_import_settings,
-    SSM_OT_export_settings,
+    SSM_OT_KeyListener,
+    SSM_OT_ImportSettings,
+    SSM_OT_ExportSettings,
     SSM_UL_AnimationStrips,
     SSM_UL_CaptureItems,
-    SSM_OT_duplicate_strip,
-    SSM_OT_add_strip,
-    SSM_OT_remove_strip,
-    SSM_OT_move_strip,
-    SSM_OT_play_capture_items,
-    SSM_OT_add_capture_item,
-    SSM_OT_remove_capture_item,
-    SSM_OT_sync_strips,
+    SSM_OT_DuplicateStrip,
+    SSM_OT_AddStrip,
+    SSM_OT_RemoveStrip,
+    SSM_OT_MoveStrip,
+    SSM_OT_PlayCaptureItems,
+    SSM_OT_AddCaptureItem,
+    SSM_OT_RemoveCaptureItem,
+    SSM_OT_SyncStrips,
     SSM_OT_CreateAutoCamera,
     SSM_OT_PixelateImage,
     SSM_OT_CombineSprites,
@@ -1406,12 +1453,6 @@ def register():
     Scene.sprite_sheet_maker_props = PointerProperty(type=SSM_Properties)
     Scene.animation_strips = CollectionProperty(type=SSM_StripInfo)
     Scene.strip_index = IntProperty(default=0)
-    Scene.dummy_label = StringProperty(name='Dummy Label', default='')
-    Scene.dummy_items = CollectionProperty(type=SSM_CaptureItem)
-    Scene.dummy_index = IntProperty(default=0)
-    Scene.dummy_manual_frames = BoolProperty(name="Manual Frame Selection", default=False)
-    Scene.dummy_start = IntProperty(name='Dummy Start', default=0, min=-1048574, max=1048574)
-    Scene.dummy_end = IntProperty(name='Dummy End', default=250, min=-1048574, max=1048574)
 
 
     # Start listening for "Alt" key
@@ -1430,15 +1471,8 @@ def unregister():
             pass
 
     del Scene.sprite_sheet_maker_props
-
     del Scene.animation_strips
     del Scene.strip_index
-    del Scene.dummy_label
-    del Scene.dummy_items
-    del Scene.dummy_index
-    del Scene.dummy_manual_frames
-    del Scene.dummy_start
-    del Scene.dummy_end
 
 
 if __name__ == "__main__":
