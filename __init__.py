@@ -137,9 +137,9 @@ class SSM_StripInfo(PropertyGroup):
         update=lambda self, ctx: self.sync_update(ctx, "pixelate_image_path")
     )
     
-    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the strip\nIf disabled, the start & end frame of longest action will be taken", update=lambda self, ctx: self.sync_update(ctx, "manual_frames"))
-    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574, update=lambda self, ctx: self.sync_update(ctx, "frame_start"))
-    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574, update=lambda self, ctx: self.sync_update(ctx, "frame_end"))
+    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the strip\nIf disabled, the start & end frame of longest action will be taken")
+    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574)
+    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574)
 class SSM_Properties(PropertyGroup):
 
     def update_temp_folder(self, context):
