@@ -692,6 +692,47 @@ def delete_auto_camera():
     cam_obj = bpy.data.objects.get(AUTO_CAMERA_NAME)
     if cam_obj is not None:
         bpy.data.objects.remove(cam_obj, do_unlink=True) 
+def assign_objects_visibility(animation_strips):
+
+    # Collect every object referenced across all strips capture items
+    capture_objects = set()
+    for strip in animation_strips:
+        for (obj, action, slot) in strip.capture_items:
+            if obj is not None:
+                capture_objects.add(obj)
+
+
+    # Warn and return empty dict if no capture objects found to isolate visibility
+    if len(capture_objects) == 0:
+        log("No capture objects found to isolate visibility")
+        return {}
+
+
+    # Store original visibility of every object before changing it
+    original_visibility = {}
+    for obj in bpy.context.scene.objects:
+        original_visibility[obj] = (obj.hide_viewport, obj.hide_render)
+
+
+    # Hide all non capture objects and show all capture objects
+    for obj in bpy.context.scene.objects:
+        is_capture_obj = obj in capture_objects
+        obj.hide_viewport = not is_capture_obj
+        obj.hide_render = not is_capture_obj
+
+    return original_visibility
+def restore_object_visibility(original_visibility):
+
+    # Warn and return if no original visibility data found to restore
+    if len(original_visibility) == 0:
+        log("No original visibility data found to restore")
+        return
+
+
+    # Reset every object back to its original visibility
+    for obj, (hide_viewport, hide_render) in original_visibility.items():
+        obj.hide_viewport = hide_viewport
+        obj.hide_render = hide_render
 def render(output_file_path:str):
 
     # Set Output File Location
@@ -886,12 +927,7 @@ class SpriteSheetMaker():
         bpy.context.scene.render.resolution_x = old_resolution_x 
         bpy.context.scene.render.resolution_y = old_resolution_y
         bpy.context.scene.camera = old_camera
-    def create_sprite_sheet(self, param:SpriteSheetParam, output_path:str):
-        
-        # Create temp folder
-        log(f"Creating temp folder '{TEMP_FOLDER_NAME}'")
-        temp_dir = create_folder(os.path.dirname(output_path), TEMP_FOLDER_NAME)
-
+    def create_sprite_sheet_impl(self, param:SpriteSheetParam, temp_dir:str):
 
         # Iterate through actions and capture render for each frame (Each action should have it's own folder (in order) & image names should be 1, 2, 3 for each frame respectively)
         for i, strip in enumerate(param.animation_strips):
@@ -948,6 +984,11 @@ class SpriteSheetMaker():
             # Create auto camera
             camera = create_auto_camera(strip.auto_capture_param) if not strip.custom_camera else strip.custom_camera
 
+
+            # Hide all non capture items and show all capture items of this strip
+            strip_original_visibility = assign_objects_visibility([strip])
+
+
             # Iterate through all frames & render sprite frame
             pixelate_dict:dict[str, str] = {}  # { <Input path>: <Output path> } (if value is None then key is used)
             for frame in range(frame_start, frame_end + 1):
@@ -974,6 +1015,10 @@ class SpriteSheetMaker():
                 self.on_sheet_frame_created.broadcast(strip.label, frame)
 
 
+            # Reset original visibility of this strip's objects
+            restore_object_visibility(strip_original_visibility)
+
+
             # Delete auto camera
             if(not strip.custom_camera and camera is not None):
                 bpy.data.objects.remove(camera, do_unlink=True) 
@@ -993,15 +1038,37 @@ class SpriteSheetMaker():
 
             # Notify completed row creation
             self.on_sheet_row_created.broadcast(strip.label, frame_end)
-
+    def create_sprite_sheet(self, param:SpriteSheetParam, output_path:str):
         
-        # Combine images together into single file and paste in output
-        assemble_images(param.assemble_param, temp_dir, output_path)
+        # Hide all non capture items and show all capture items
+        original_visibility = assign_objects_visibility(param.animation_strips)
 
 
-        # Delete temp folder
-        if param.delete_temp_folder:
-            shutil.rmtree(temp_dir)
+        # Intentionally kept inside try so that visibility is restored even incase of failure
+        try:
+
+            # Create temp folder
+            log(f"Creating temp folder '{TEMP_FOLDER_NAME}'")
+            temp_dir = create_folder(os.path.dirname(output_path), TEMP_FOLDER_NAME)
+
+            
+            # Create images required for sheet 
+            self.create_sprite_sheet_impl(param, temp_dir)
+
+
+            # Combine images together into single file and paste in output
+            assemble_images(param.assemble_param, temp_dir, output_path)
+
+
+            # Delete temp folder
+            if param.delete_temp_folder:
+                shutil.rmtree(temp_dir)
+        except Exception as e:
+            log(f"Failed while capturing sprite sheet frames: {e} \n {traceback.format_exc()}")
+
+
+        # Reset original visibility of all objects
+        restore_object_visibility(original_visibility)
 
 
         return True

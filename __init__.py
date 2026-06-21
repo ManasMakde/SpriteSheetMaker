@@ -500,6 +500,14 @@ class SSM_OT_PlayCaptureItems(Operator):
                 continue
         
             item.object.animation_data.action = item.action
+
+            # Assign user provided slot else default slot
+            slot_name = f"OB{item.slot}"
+            if item.slot != "" and slot_name in item.action.slots:
+                item.object.animation_data.action_slot = item.action.slots[slot_name]
+            elif hasattr(item.object.animation_data, "action_suitable_slots") and len(item.object.animation_data.action_suitable_slots) > 0:
+                item.object.animation_data.action_slot = item.object.animation_data.action_suitable_slots[0]
+
             if item.action.frame_range:
                 min_frame = min(min_frame, item.action.frame_range[0])
                 max_frame = max(max_frame, item.action.frame_range[1])
