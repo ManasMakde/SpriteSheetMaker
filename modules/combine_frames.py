@@ -8,6 +8,8 @@ from .logging import *
 # Constants
 DEFAULT_COLOR_MODE = "RGBA"
 DEFAULT_FILE_FORMAT = "PNG"
+PIL_MAX_CHANNEL_VALUE = 255
+DEFAULT_ALPHA_CHANNEL_VALUE = 255
 
 
 # Enums
@@ -45,6 +47,8 @@ class RowData:
 class AssembleParam:
     def __init__(self):
         self.font_size:int = 24
+        self.label_color:tuple = (1.0, 1.0, 1.0, 1.0)  # RGBA normalized 0 to 1
+        self.background_color:tuple = (0.0, 0.0, 0.0, 0.0)  # RGBA normalized 0 to 1
         self.surrounding_margin:int = (15, 15, 15, 15)  # top, right, bottom, left
         self.label_margin:int = 15
         self.image_margin:int = 15
@@ -88,6 +92,21 @@ def create_folder(at_path, folder_name=""):
 
 
     return folder_path
+def color_to_pil(color, mode):
+
+    # Warn and fallback if color data is invalid
+    if color is None or len(color) < 3:
+        log("Invalid color provided to color_to_pil, falling back to black", True, "ERROR")
+        return (0, 0, 0, 0) if mode == "RGBA" else (0, 0, 0)
+
+
+    # Convert normalized 0 to 1 channels into 0 to 255 int values
+    r = int(round(color[0] * PIL_MAX_CHANNEL_VALUE))
+    g = int(round(color[1] * PIL_MAX_CHANNEL_VALUE))
+    b = int(round(color[2] * PIL_MAX_CHANNEL_VALUE))
+    a = int(round(color[3] * PIL_MAX_CHANNEL_VALUE)) if len(color) > 3 else DEFAULT_ALPHA_CHANNEL_VALUE
+
+    return (r, g, b, a) if mode == "RGBA" else (r, g, b)
 def calc_align_offset(align:SpriteAlign, large_width:int, large_height:int, small_width:int, small_height:int):
 
     x_offset = 0.0
@@ -156,11 +175,11 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
     sheet_height += surrounding_margin[0] + surrounding_margin[2]
 
 
-    # Create sheet
+# Create sheet
     log(f"Creating sprite sheet {sheet_width}x{sheet_height}")
     images = rows[0].images
     img_mode = images[0].mode if len(images)!=0 else DEFAULT_COLOR_MODE
-    bg_color = (0, 0, 0, 0) if img_mode == "RGBA" else (0, 0, 0)
+    bg_color = color_to_pil(param.background_color, img_mode)
     sheet = Image.new(img_mode, (int(sheet_width), int(sheet_height)), bg_color)
     draw = ImageDraw.Draw(sheet)
     font = ImageFont.load_default(param.font_size) if param.font_size !=0 else None
@@ -178,7 +197,8 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
         if(font_size != 0):
             label_location_x = paste_width + row_data.label_offset[0]
             label_location_y = paste_height + row_data.label_offset[1]
-            draw.text((label_location_x, label_location_y), row_data.label_text, fill="white", font=font, spacing = 0)
+            label_fill = color_to_pil(param.label_color, img_mode)
+            draw.text((label_location_x, label_location_y), row_data.label_text, fill=label_fill, font=font, spacing = 0)
             paste_height += row_data.label_height + label_margin
             log(f"Addded label '{row_data.label_text}' at ({label_location_x},{label_location_y})")
 
@@ -201,9 +221,11 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
             # Paste image
             img_location_x = paste_width + offset_x
             img_location_y = paste_height + offset_y
-            sheet.paste(img, (int(img_location_x), int(img_location_y)))
+            paste_mask = img if img.mode == DEFAULT_COLOR_MODE else None
+            sheet.paste(img, (int(img_location_x), int(img_location_y)), paste_mask)
             paste_width += large_width + image_margin
             log(f"Addded image of frame {i + 1} at ({img_location_x},{img_location_y})")
+
         
 
         # Increase paste height
@@ -262,7 +284,7 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
         # Create strip
         log(f"Creating strip {strip_width}x{strip_height}")
         img_mode = row_data.images[0].mode if len(row_data.images)!=0 else DEFAULT_COLOR_MODE
-        bg_color = (0, 0, 0, 0) if img_mode == "RGBA" else (0, 0, 0)
+        bg_color = color_to_pil(param.background_color, img_mode)
         strip = Image.new(img_mode, (int(strip_width), int(strip_height)), bg_color)
         draw = ImageDraw.Draw(strip)
 
@@ -272,7 +294,8 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
         if(font_size != 0):
             label_location_x = surrounding_margin_left + row_data.label_offset[0]
             label_location_y = surrounding_margin_top + row_data.label_offset[1]
-            draw.text((label_location_x, label_location_y), row_data.label_text, fill="white", font=font, spacing = 0)
+            label_fill = color_to_pil(param.label_color, img_mode)
+            draw.text((label_location_x, label_location_y), row_data.label_text, fill=label_fill, font=font, spacing = 0)
             paste_height += row_data.label_height + label_margin
 
 
@@ -295,7 +318,8 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
             # Paste image
             img_location_x = paste_width + offset_x
             img_location_y = paste_height + offset_y
-            strip.paste(img, (int(img_location_x), int(img_location_y)))
+            paste_mask = img if img.mode == DEFAULT_COLOR_MODE else None
+            strip.paste(img, (int(img_location_x), int(img_location_y)), paste_mask)
             paste_width += large_width + image_margin
 
 
@@ -344,7 +368,7 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
 
             # Create new image
             log(f"Creating image {new_img_width}x{new_img_height}")
-            bg_color = (0, 0, 0, 0) if img.mode == "RGBA" else (0, 0, 0)
+            bg_color = color_to_pil(param.background_color, img.mode)
             new_img = Image.new(img.mode, (int(new_img_width), int(new_img_height)), bg_color)
             
 
@@ -353,7 +377,8 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
             # Paste image
-            new_img.paste(img, (int(offset_x + surrounding_margin_left), int(offset_y + surrounding_margin_top)))
+            paste_mask = img if img.mode == DEFAULT_COLOR_MODE else None
+            new_img.paste(img, (int(offset_x + surrounding_margin_left), int(offset_y + surrounding_margin_top)), paste_mask)
 
 
             # Save new image

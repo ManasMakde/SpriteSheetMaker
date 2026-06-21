@@ -11,7 +11,7 @@ import os
 import json
 from bpy.types import Panel, Operator, PropertyGroup, Object, Action, UIList, Scene
 from bpy_extras.io_utils import ExportHelper, ImportHelper
-from bpy.props import StringProperty, FloatProperty,BoolProperty, PointerProperty, CollectionProperty, IntProperty, EnumProperty
+from bpy.props import StringProperty, FloatProperty,BoolProperty, PointerProperty, CollectionProperty, IntProperty, EnumProperty, FloatVectorProperty
 from .modules.sprite_sheet_utils import *
 from .modules.combine_frames import *
 from .modules.logging import *
@@ -152,6 +152,8 @@ class SSM_Properties(PropertyGroup):
 
     # Output settings
     label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000, description="Font size of label text")
+    label_color: FloatVectorProperty(name="Label Color", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0), min=0.0, max=1.0, description="Color of the label text on top of each strip")
+    background_color: FloatVectorProperty(name="Background Color", subtype='COLOR', size=4, default=(0.0, 0.0, 0.0, 0.0), min=0.0, max=1.0, description="Background color for entire sheet (or strips, or images based on combine mode)")
     surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the top of the sprite sheet")
     surrounding_margin_right: IntProperty(name="Surrounding Margin Right", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the right of the sprite sheet")
     surrounding_margin_bottom: IntProperty(name="Surrounding Margin Bottom", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the bottom of the sprite sheet")
@@ -599,8 +601,8 @@ class SSM_OT_ExportSettings(Operator, ExportHelper):
         # Store all common properties
         for p in props.rna_type.properties:
             if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
-                export_data["props"][p.identifier] = getattr(props, p.identifier)
-
+                prop_value = getattr(props, p.identifier)
+                export_data["props"][p.identifier] = list(prop_value) if p.is_array else prop_value
 
         return export_data
     def invoke(self, context, event):
@@ -738,7 +740,7 @@ class SSM_OT_CreateAutoCamera(Operator):
 
         # Set it up based on auto parameters
         param = gen_auto_capture_param(curr_strip)
-        setup_auto_camera(param, cam_obj)
+        setup_auto_camera(cam_obj, param)
 
 
         return {'FINISHED'}
@@ -1155,6 +1157,18 @@ class SSM_PT_MainPanel(Panel):
             # Label Font Size
             box.prop(props, "label_font_size", text="Label Font Size")
 
+            # Label Color
+            row = box.row()
+            split = row.split(factor=0.45)
+            split.label(text="Label Color")
+            split.prop(props, "label_color", text="")
+
+            # Background Color
+            row = box.row()
+            split = row.split(factor=0.45)
+            split.label(text="Background Color")
+            split.prop(props, "background_color", text="")
+
             # Surrounding Margins
             box.label(text="Surrounding Margins")
             row = box.row(align=True)  # Create a row layout
@@ -1240,7 +1254,7 @@ def gen_assemble_param():
     # Set assemble parameters
     param = AssembleParam()
     for prop in param.__dict__:
-        if hasattr(props, prop) and prop not in ["surrounding_margin", "consistency", "align", "combine_mode"]:
+        if hasattr(props, prop) and prop not in ["surrounding_margin", "consistency", "align", "combine_mode", "label_color", "background_color"]:
             setattr(param, prop, getattr(props, prop))
     
 
@@ -1250,6 +1264,8 @@ def gen_assemble_param():
     param.align = SpriteAlign(props.sprite_align)
     param.combine_mode = CombineMode(props.combine_mode)
     param.font_size = props.label_font_size
+    param.label_color = tuple(props.label_color)
+    param.background_color = tuple(props.background_color)
 
 
     return param

@@ -627,7 +627,7 @@ def ortho_cam_fit(camera, bounding_points, param: AutoCaptureParam):
 
 
 # Methods
-def create_auto_camera(param:AutoCaptureParam, custom_camera = None):
+def create_auto_camera(param:AutoCaptureParam):
     cam_data = bpy.data.cameras.new(name=AUTO_CAMERA_NAME)
     cam_data.type = 'ORTHO'
     cam_obj = bpy.data.objects.new(AUTO_CAMERA_NAME, cam_data)
@@ -635,10 +635,10 @@ def create_auto_camera(param:AutoCaptureParam, custom_camera = None):
     bpy.context.collection.objects.link(cam_obj)
     return cam_obj
 def setup_auto_camera(cam_obj, param:AutoCaptureParam):
-
+    
     # Return If no camera provided
     if cam_obj is None:
-        return
+        cam_obj = create_auto_camera(param)
 
 
     # Incase of pre-defined direction
