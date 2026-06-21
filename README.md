@@ -323,6 +323,14 @@ You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoD
 You can contribute in the following ways:
 1. Report bugs or suggest features by opening a [new issue](https://github.com/ManasMakde/SpriteSheetMaker/issues/new).
 2. Write test cases.
+3. Sponsor this project.
+
+
+
+## ❤️ Sponsor
+If this addons has been useful in your projects consider [supporting][Sponsor] its development.  
+Any support motivates to keep the project well maintained, documented & growing.
+
 
 
 ## 🏆 Credits
@@ -336,3 +344,4 @@ MIT © [Manas Ravindra Makde](https://manasmakde.github.io/)
 
 
 [Roll Wiki]: https://simple.wikipedia.org/wiki/Pitch,_yaw,_and_roll
+[Sponsor]: https://github.com/sponsors/ManasMakde
