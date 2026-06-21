@@ -107,6 +107,23 @@ def color_to_pil(color, mode):
     a = int(round(color[3] * PIL_MAX_CHANNEL_VALUE)) if len(color) > 3 else DEFAULT_ALPHA_CHANNEL_VALUE
 
     return (r, g, b, a) if mode == "RGBA" else (r, g, b)
+def alpha_paste(base_img, src_img, position):
+
+    # Simple paste if source has no alpha channel to blend
+    if src_img.mode != DEFAULT_COLOR_MODE:
+        base_img.paste(src_img, position)
+        return
+
+
+    # Warn and fallback if base has no alpha channel to composite into
+    if base_img.mode != DEFAULT_COLOR_MODE:
+        log("Base image is not RGBA, alpha compositing skipped, pasting directly instead", True, "ERROR")
+        base_img.paste(src_img, position, src_img)
+        return
+
+
+    # Properly alpha composite source onto base at given position
+    base_img.alpha_composite(src_img, dest=position)
 def calc_align_offset(align:SpriteAlign, large_width:int, large_height:int, small_width:int, small_height:int):
 
     x_offset = 0.0
@@ -175,7 +192,7 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
     sheet_height += surrounding_margin[0] + surrounding_margin[2]
 
 
-# Create sheet
+    # Create sheet
     log(f"Creating sprite sheet {sheet_width}x{sheet_height}")
     images = rows[0].images
     img_mode = images[0].mode if len(images)!=0 else DEFAULT_COLOR_MODE
@@ -221,8 +238,7 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
             # Paste image
             img_location_x = paste_width + offset_x
             img_location_y = paste_height + offset_y
-            paste_mask = img if img.mode == DEFAULT_COLOR_MODE else None
-            sheet.paste(img, (int(img_location_x), int(img_location_y)), paste_mask)
+            alpha_paste(sheet, img, (int(img_location_x), int(img_location_y)))
             paste_width += large_width + image_margin
             log(f"Addded image of frame {i + 1} at ({img_location_x},{img_location_y})")
 
@@ -318,8 +334,7 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
             # Paste image
             img_location_x = paste_width + offset_x
             img_location_y = paste_height + offset_y
-            paste_mask = img if img.mode == DEFAULT_COLOR_MODE else None
-            strip.paste(img, (int(img_location_x), int(img_location_y)), paste_mask)
+            alpha_paste(strip, img, (int(img_location_x), int(img_location_y)))
             paste_width += large_width + image_margin
 
 
@@ -377,8 +392,7 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
 
 
             # Paste image
-            paste_mask = img if img.mode == DEFAULT_COLOR_MODE else None
-            new_img.paste(img, (int(offset_x + surrounding_margin_left), int(offset_y + surrounding_margin_top)), paste_mask)
+            alpha_paste(new_img, img, (int(offset_x + surrounding_margin_left), int(offset_y + surrounding_margin_top)))
 
 
             # Save new image

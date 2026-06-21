@@ -16,6 +16,7 @@ from .modules.sprite_sheet_utils import *
 from .modules.combine_frames import *
 from .modules.logging import *
 
+
 # Constants
 SPRITE_SHEET_MAKER = SpriteSheetMaker()
 SINGLE_SPRITE_NAME = "sprite"
