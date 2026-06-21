@@ -611,8 +611,9 @@ class SSM_OT_ExportSettings(Operator, ExportHelper):
         for p in props.rna_type.properties:
             if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
                 prop_value = getattr(props, p.identifier)
-                export_data["props"][p.identifier] = list(prop_value) if p.is_array else prop_value
+                export_data["props"][p.identifier] = list(prop_value) if getattr(p, "is_array", False) else prop_value
 
+                
         return export_data
     def invoke(self, context, event):
         self.filepath = DEFAULT_SETTINGS_FILE_NAME

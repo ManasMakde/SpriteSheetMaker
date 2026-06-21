@@ -141,7 +141,7 @@ def calc_target_loc(target_obj, target_bone:str):
     # If armature has bone
     pose_bone = target_obj.pose.bones.get(target_bone)
     if pose_bone:
-        return pose_bone.head
+        return target_obj.matrix_world @ pose_bone.head  # Global bone head location
     
 
     # If no bone
@@ -390,13 +390,11 @@ def persp_cam_horizontal_fit(camera, bounding_points, param: AutoCaptureParam):
     bpy.context.scene.render.resolution_y = resolution_y
 
 
-    # Assign camera rotation
+    # Assign camera rotation & location
     cam_correction = Matrix.Rotation(math.radians(90), 4, 'X')
-    camera.rotation_euler = (rot_matrix @ cam_correction).to_euler('XYZ')
-
-
-    # Assign camera location
-    camera.location = I_h.x * right + I_h.y * direction + I_v.x * up
+    cam_rotation = rot_matrix @ cam_correction
+    cam_world_loc = I_h.x * right + I_v.y * direction + I_v.x * up
+    camera.matrix_world = Matrix.Translation(cam_world_loc) @ cam_rotation  # Intentionally done in case of a parented camera 
 def persp_cam_vertical_fit(camera, bounding_points, param: AutoCaptureParam, use_width:bool = False):
 
     # Convert all points using up and right vector into 2D points such that they appear to be "top view"
@@ -500,13 +498,11 @@ def persp_cam_vertical_fit(camera, bounding_points, param: AutoCaptureParam, use
     bpy.context.scene.render.resolution_y = resolution_y
 
 
-    # Assign camera rotation
+    # Assign camera rotation & location
     cam_correction = Matrix.Rotation(math.radians(90), 4, 'X')
-    camera.rotation_euler = (rot_matrix @ cam_correction).to_euler('XYZ')
-
-
-    # Assign camera location
-    camera.location = I_h.x * right + I_v.y * direction + I_v.x * up
+    cam_rotation = rot_matrix @ cam_correction
+    cam_world_loc = I_h.x * right + I_v.y * direction + I_v.x * up
+    camera.matrix_world = Matrix.Translation(cam_world_loc) @ cam_rotation  # Intentionally done in case of a parented camera 
 def ortho_cam_fit(camera, bounding_points, param: AutoCaptureParam):
 
     # Get all orientation vectors
@@ -618,12 +614,10 @@ def ortho_cam_fit(camera, bounding_points, param: AutoCaptureParam):
 
     # Assign camera rotation & location
     cam_correction = Matrix.Rotation(math.radians(90), 4, 'X')
-    camera.rotation_euler = (rot_matrix @ cam_correction).to_euler('XYZ')
-    camera.location = I_h.x * right + I_v.x * up + I_h.y * direction
-
-
-    # Viewport correction
-    camera.location -= direction * camera.data.display_size
+    cam_rotation = rot_matrix @ cam_correction
+    cam_world_loc = I_h.x * right + I_v.x * up + I_h.y * direction
+    cam_world_loc -= direction * camera.data.display_size   # Viewport correction
+    camera.matrix_world = Matrix.Translation(cam_world_loc) @ cam_rotation    # Intentionally done in case of a parented camera 
 
 
 # Methods
