@@ -199,7 +199,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
       If enabled, The temporary folder is deleted after creating the sprite sheet.  
 
    - **Temp Folder:**  
-      Used as input for `Combine Sprites`.
+      Used as input for `Combine Sprites` button.
 
    - **Combine Sprites:**  
       Combines all images in the selected `Temp Folder` into one sprite sheet but only given that it follows the following structure:
@@ -286,7 +286,7 @@ You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoD
 
 **_Why do my objects not perfectly fit into camera view (especially perspective) when creating auto camera?_**  
 1. Make sure the desired objects are added into the capture items list.
-2. The auto camera perfectly fits the **bounding box** into the view not the object vertices themselves since that would be computationally very expensive.
+2. The auto camera perfectly fits the **bounding box** into the view not the object vertices themselves since that would be computationally very expensive. To check this yourself [turn on the bounding box](https://www.youtube.com/watch?v=uL1goLLdIWw).
 
 <br/>
 
