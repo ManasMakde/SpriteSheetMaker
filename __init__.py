@@ -903,9 +903,9 @@ class SSM_OT_CreateSheet(Operator):
 
 
         # Return if not a single valid action was providede
-        if(check_actions and valid_action_count == 0):
-            log(f"Not a single Action provided in 'Capture Items' of '{get_strip_label(strip)}' Strip!", True, "CANCEL")
-            return False
+        # if(check_actions and valid_action_count == 0):
+        #     log(f"Not a single Action provided in 'Capture Items' of '{get_strip_label(strip)}' Strip!", True, "CANCEL")
+        #     return False
         
 
         # Return if manual cameras has not been set
