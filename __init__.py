@@ -741,12 +741,11 @@ class SSM_OT_CreateAutoCamera(Operator):
         cam_obj = curr_strip.custom_camera
 
 
-        # Return if empty capture items
-        objects = get_objects_to_capture(curr_strip)
-        if(len(objects) == 0):
-            log(f"Cannot create auto camera due to empty 'Capture Items' in '{get_strip_label(curr_strip)}' Strip!", True, "CANCEL")
+        # Return if any invalid property in strip
+        curr_strip = get_current_strip()
+        if(not SSM_OT_CreateSheet.check_strip(curr_strip)):
             return {'FINISHED'}
-
+        
 
         # Set it up based on auto parameters
         param = gen_auto_capture_param(curr_strip)
@@ -841,9 +840,9 @@ class SSM_OT_CreateSingleSprite(Operator):
             return {'FINISHED'}
 
 
-        # Return if empty capture items
+        # Return if any invalid property in strip
         curr_strip = get_current_strip()
-        if(not SSM_OT_CreateSheet.check_strip(curr_strip, False)):
+        if(not SSM_OT_CreateSheet.check_strip(curr_strip)):
             return {'FINISHED'}
         
 
@@ -912,15 +911,27 @@ class SSM_OT_CreateSheet(Operator):
                 return False
 
 
-        # Return if not a single valid action was providede
-        # if(check_actions and valid_action_count == 0):
-        #     log(f"Not a single Action provided in 'Capture Items' of '{get_strip_label(strip)}' Strip!", True, "CANCEL")
-        #     return False
+        # Return if neither auto capture nor custom camera has been set
+        if(not strip.to_auto_capture and (strip.custom_camera is None)):
+            log(f"Either set a valid 'Custom Camera' or enable 'To Auto Capture'\nin '{get_strip_label(strip)}' Strip!", True, "CANCEL")
+            return False
         
 
-        # Return if manual cameras has not been set
-        if(not strip.to_auto_capture and ((strip.custom_camera is None) or (strip.custom_camera.type != 'CAMERA'))):
-            log(f"Either set 'Custom Camera' or enable 'To Auto Capture'\nin '{get_strip_label(strip)}' Strip!", True, "CANCEL")
+        # Return if invalid custom camera
+        if(not strip.to_auto_capture and not is_valid(strip.custom_camera, False)):
+            log(f"Invalid 'Custom Camera' in '{get_strip_label(strip)}' Strip!", True, "CANCEL")
+            return False
+
+
+        # Return if invalid center obj H
+        if(strip.to_auto_capture and (strip.h_center_object is not None) and (not is_valid(strip.h_center_object))):
+            log(f"Invalid 'Center Obj H' in '{get_strip_label(strip)}' Strip!", True, "CANCEL")  # Return if invalid Center Obj H
+            return False
+
+
+        # Return if invalid center obj V
+        if(strip.to_auto_capture and (strip.v_center_object is not None) and (not is_valid(strip.v_center_object))):
+            log(f"Invalid 'Center Obj V' in '{get_strip_label(strip)}' Strip!", True, "CANCEL")
             return False
 
 
@@ -1353,6 +1364,20 @@ def gen_sprite_sheet_param():
 
 
 # Helper Methods
+def is_valid(obj, check_for_none = True):
+
+    # Check if the variable is None
+    if check_for_none and obj is None:
+        return False
+        
+    # Check if the object was structurally deleted (dead pointer)
+    try:
+        obj_name = obj.name
+    except ReferenceError:
+        return False
+        
+    # Check if it is actively linked to the current scene's view layer
+    return obj_name in bpy.context.view_layer.objects
 def get_current_strip():
     scene = bpy.context.scene
     strips = scene.animation_strips
@@ -1410,12 +1435,8 @@ def get_objects_to_capture(strip):
     objects = set()
     for item in strip.capture_items:
 
-        # Skip if invalid object
-        if(item.object is None):
-            continue
-
-        # Skip if not to consider armature
-        if(item.object.type == 'ARMATURE' and not strip.consider_armature_bones):
+        # Skip if invalid object or if not to consider armature
+        if(not is_valid(item.object) or (item.object.type == 'ARMATURE' and not strip.consider_armature_bones)):
             continue
         
         objects.add(item.object)
