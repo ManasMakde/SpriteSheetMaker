@@ -113,9 +113,10 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 
    - **Center Obj H:**  
       If assigned, This object's origin will always be in the horizontal center of the camera view.  
+      If assigned an armature & valid **Bone** is provided then the location of the bone head will be used. Incase of an invalid bone the location of the armature will be used.
+   
    - **Center Obj V:**  
       If assigned, This object's origin will always be in the vertical center of the camera view.  
-      If the assigned center object is an armature & `Bone` is provided, Then the location of the bone head will be used. 
 
    - **Consider Armature Bones:** If disabled, the bounding box of the armature will ignored during "Auto Capture" (This feature was added so you can avoid pesky leaf bones from being captured).
   
