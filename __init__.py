@@ -86,7 +86,7 @@ class SSM_StripInfo(PropertyGroup):
     
         SSM_OT_SyncStrips.sync(context, {prop_name})
 
-    in_sync: BoolProperty(name="Sync Strip", default=True)
+    in_sync: BoolProperty(name="Sync Strip", default=False)
     label: StringProperty(name="Label", default="", description="The text that will be added on top of the strip in the sprite sheet")
     capture_items: CollectionProperty(type=SSM_CaptureItem)
     capture_item_index: IntProperty(default=0, description="Pointer tracking active item inside collection")
@@ -891,7 +891,7 @@ class SSM_OT_CreateSheet(Operator):
         # Return if empty capture items
         objects = get_objects_to_capture(strip)
         if(strip.to_auto_capture and len(objects) == 0):
-            log(f"Empty 'Capture Items' in '{get_strip_label(strip)}' Strip!", True, "CANCEL")
+            log(f"Empty or Invalid 'Capture Items' in '{get_strip_label(strip)}' Strip!", True, "CANCEL")
             return False
 
             
