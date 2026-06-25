@@ -10,16 +10,15 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 
 ## 🪄 Features
 1. Highly customizable
-2. Inbuilt auto camera
-3. Labeling for each strip
-4. Allows single sprite creation
-5. In-built pixelation tool
-6. Options for combining into sheet, strips or images
-7. Maintains sprite dimension consistency
-8. Recontinuing in case of failure  
-9. Supports perspective & orthographic camera
-10. Import/Export settings
-
+1. Inbuilt auto camera
+1. Labeling for each strip
+1. Allows single sprite creation
+1. In-built pixelation tool
+1. Options for combining into sheet, strips or images
+1. Maintains sprite dimension consistency
+1. Recontinuing in case of failure  
+1. Supports perspective & orthographic camera
+1. Import/Export settings
 
 >📜 **Tip:**  
 > If you want to reuse the core functionality without the UI in your own code base look inside the `modules/` folder.  
@@ -173,6 +172,12 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    - **Label Font Size:**  
       The font size of the action name labels in sprite sheet, If you do not want labels in your sprite sheet you can set it to 0.  
 
+   - **Label Color:**  
+      The color of the label on top of the strip.
+
+   - **Background Color:**  
+      The background color of the entire sprite sheet. (Can also be set to transparent)
+   
    - **Surrounding Margins:**  
       Margin, in pixels, that should be applied around the borders of the entire sprite sheet.  
    
