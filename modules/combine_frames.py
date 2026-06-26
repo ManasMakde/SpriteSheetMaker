@@ -183,7 +183,7 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
 
 
         # Additional top label margin 
-        if(row_count != 0 and font_size != 0):
+        if(row_count != 0):
             sheet_height += label_margin
 
 
