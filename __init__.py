@@ -119,8 +119,6 @@ class SSM_StripInfo(PropertyGroup):
     v_center_object: PointerProperty(name="Vertical Center Object", type=Object, description="Object whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_object"))
     v_center_bone: StringProperty(name="Vertical Center Bone", default="", description="Bone whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_bone"))
     
-    to_flip_h: BoolProperty(name="To Flip H", default=False, description="If enabled the rendered image is flipped horizontally before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_h"))
-    to_flip_v: BoolProperty(name="To Flip V", default=False, description="If enabled the rendered image is flipped vertically before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_v"))
     consider_armature_bones: BoolProperty(default=False, description="Include all armature bones when calculating auto-capture camera bounds to ensure they remain within camera view", update=lambda self, ctx: self.sync_update(ctx, "consider_armature_bones"))
     pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, description="Number of pixels rendered per one world space meter unit", update=lambda self, ctx: self.sync_update(ctx, "pixels_per_meter"))
     camera_padding_h: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding_h"))
@@ -140,6 +138,13 @@ class SSM_StripInfo(PropertyGroup):
         update=lambda self, ctx: self.sync_update(ctx, "pixelate_image_path")
     )
     
+    
+    # Flip settings
+    to_flip_h: BoolProperty(name="To Flip H", default=False, description="If enabled the rendered image is flipped horizontally before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_h"))
+    to_flip_v: BoolProperty(name="To Flip V", default=False, description="If enabled the rendered image is flipped vertically before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_v"))
+    
+    
+    # Manual frame settings
     manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the strip\nIf disabled, the start & end frame of longest action will be taken")
     frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574)
     frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574)
@@ -1068,10 +1073,6 @@ class SSM_PT_MainPanel(Panel):
             col.prop(strip, "v_center_object", text="")
             if strip.v_center_object and strip.v_center_object.type == 'ARMATURE':
                 col.prop_search(strip, "v_center_bone", strip.v_center_object.pose, "bones", text="Bone")
-            
-            # To Flip H & To Flip V
-            sub_col.prop(strip, "to_flip_h", text="To Flip H")
-            sub_col.prop(strip, "to_flip_v", text="To Flip V")
 
             # Consider Armature Bones
             sub_col.prop(strip, "consider_armature_bones", text="Consider Armature Bones")
@@ -1109,6 +1110,11 @@ class SSM_PT_MainPanel(Panel):
             row = sub_col.row()
             row.operator("spritesheetmaker.pixelate_image", text="Pixelate Test Image", icon="MOD_REMESH")
 
+
+        # To Flip H & V
+        row_box.prop(strip, "to_flip_h")
+        row_box.prop(strip, "to_flip_v")
+        
 
         # Manual Frames
         row_box.prop(strip, "manual_frames")

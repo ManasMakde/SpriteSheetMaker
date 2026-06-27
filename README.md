@@ -166,6 +166,14 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    If disabled, The start & end frame of longest duration action will be taken.
 
 
+1. **To Flip H:**  
+   Horizontally flips the rendered image before saving into temp folder. 
+
+
+1. **To Flip V:**  
+   Vertically flips the rendered image before saving into temp folder. 
+
+
 1. **Output Settings**  
    ![Output Settings screenshot](images/output_settings_screenshot.png)   
 
