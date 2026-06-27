@@ -1,6 +1,5 @@
 import os
 from PIL import Image, ImageDraw, ImageFont
-from datetime import datetime
 from enum import Enum
 from .logging import *
 
@@ -58,6 +57,24 @@ class AssembleParam:
 
 
 # Methods
+def flip_image(image_path:str, flip_h:bool, flip_v:bool):
+
+    # Warn and return if image path is invalid
+    if not os.path.exists(image_path):
+        log(f"Invalid image path '{image_path}' provided to flip_image", True, "ERROR")
+        return
+
+
+    # Flip horizontally and or vertically based on given flags
+    img = Image.open(image_path)
+    if(flip_h):
+        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+    if(flip_v):
+        img = img.transpose(Image.FLIP_TOP_BOTTOM)
+
+
+    # Save flipped image back to same path
+    img.save(image_path)
 def unique_path(target_path:str, count_limit:int = 100000):
 
     # Return if path already exists

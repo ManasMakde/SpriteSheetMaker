@@ -4,11 +4,9 @@ import shutil
 import weakref
 import traceback
 import math
-from datetime import datetime
-import mathutils
 from mathutils import Vector, Matrix
 from enum import Enum
-from .combine_frames import AssembleParam, assemble_images, create_folder
+from .combine_frames import AssembleParam, assemble_images, create_folder, flip_image
 from .logging import *
 
 
@@ -84,6 +82,9 @@ class StripParam:
         
         self.to_pixelate:bool = False
         self.pixelate_param:PixelateParam = PixelateParam()
+
+        self.to_flip_h:bool = False
+        self.to_flip_v:bool = False
         
         self.manual_frames:bool = False
         self.frame_start:int = 0
@@ -1002,6 +1003,10 @@ class SpriteSheetMaker():
                 sprite_output_file = f"{action_dir}/{frame}.{bpy.context.scene.render.image_settings.file_format.lower()}"
                 self.create_sprite(camera, sprite_output_file)
 
+                # Flip sprite horizontally or vertically
+                if(strip.to_flip_h or strip.to_flip_v):
+                    flip_image(sprite_output_file, strip.to_flip_h, strip.to_flip_v)
+                
                 # Store path to pixelate
                 pixelate_dict[sprite_output_file] = None
 
