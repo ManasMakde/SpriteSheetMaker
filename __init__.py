@@ -1,26 +1,20 @@
 bl_info = {
     "name": "Sprite Sheet Maker",
     "author": "Manas R. Makde",
-    "version": (5, 1, 0),
+    "version": (5, 2, 0),
     "description": "3D to 2D sprite sheet converter with optional pixelation"
 }
 
 
 import bpy
 import os
-from datetime import datetime
-from .modules.sprite_sheet_maker_utils import *
+import json
+from bpy.types import Panel, Operator, PropertyGroup, Object, Action, UIList, Scene
+from bpy_extras.io_utils import ExportHelper, ImportHelper
+from bpy.props import StringProperty, FloatProperty,BoolProperty, PointerProperty, CollectionProperty, IntProperty, EnumProperty, FloatVectorProperty
+from .modules.sprite_sheet_utils import *
 from .modules.combine_frames import *
-from bpy.types import Panel, Operator, PropertyGroup, UIList
-from bpy.props import (
-    StringProperty,
-    FloatProperty,
-    BoolProperty,
-    PointerProperty,
-    CollectionProperty,
-    IntProperty,
-    EnumProperty
-)
+from .modules.logging import *
 
 
 # Constants
@@ -28,13 +22,16 @@ SPRITE_SHEET_MAKER = SpriteSheetMaker()
 SINGLE_SPRITE_NAME = "sprite"
 SPRITE_SHEET_NAME = "sprite_sheet"
 DEFAULT_OUTPUT_FOLDER_NAME = "SpriteSheetMaker"
+DEFAULT_SETTINGS_FILE_NAME = "ssm_settings.json"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
-UNTITLED_STRIP_NAME = "<Untitled>"
+UNTITLED_ROW_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
+EXCLUDE_SYNC_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "in_sync"}
+NON_SERIALIZABLE_PROPERTIES = {"custom_camera", "h_center_object", "v_center_object"} 
 
 
 # Classes
-class SpriteSheetMakerMessagePopup(bpy.types.Operator):
+class SSM_MessagePopup(Operator):
     bl_idname = "spritesheetmaker.message_popup"
     bl_label = "SpriteSheetMaker Message"
     message_heading: StringProperty(name="Heading", default="")
@@ -53,133 +50,181 @@ class SpriteSheetMakerMessagePopup(bpy.types.Operator):
                 text=line,
                 icon=self.message_icon if i == 0 else 'BLANK1'
             )
-
-class SpriteSheetMakerCaptureItem(bpy.types.PropertyGroup):
+class SSM_CaptureItem(PropertyGroup):
 
     def action_update(self, context):
-        for strip in context.scene.animation_strips:
-            for it in strip.capture_items:
+        for row in context.scene.animation_rows:
+            for it in row.capture_items:
                 if it == self:
-                    strip.update_label_from_action()
+                    row.update_label_from_action()
                     return
 
-    object: PointerProperty(name="Object", type=bpy.types.Object)
-    action: PointerProperty(name="Action", type=bpy.types.Action, update=action_update)
-    slot: StringProperty(name="Slot", default="")
-
-class SpriteSheetMakerStripInfo(bpy.types.PropertyGroup):
-    label: StringProperty(name="Label", default="")
-    capture_items: CollectionProperty(type=SpriteSheetMakerCaptureItem)
-    capture_item_index: IntProperty(default=0)
-    manual_frames: BoolProperty(name="Manual Frame Selection", default=False)
-    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574)
-    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574)
+    object: PointerProperty(name="Object", type=Object, description="Target object to be rendered within row")
+    action: PointerProperty(name="Action", type=Action, description="Animation to be captured in the row", update=action_update)
+    slot: StringProperty(name="Slot", default="", description="(Optional)")
+class SSM_RowInfo(PropertyGroup):
 
     def update_label_from_action(self):
-        # Iterate through all items
-        action_count = 0
-        new_label = ""
-        for item in self.capture_items:
-            if item.action:
-                new_label = item.action.name
-                action_count +=1
-            
-            if action_count > 1:
-                break
         
+        # Return if label already assigned
+        if(self.label != ""):
+            return
 
-        # Assign new label if only 1 action or empty label
-        if(action_count <= 1 or self.label.strip() == ""):
-            self.label = new_label
+        
+        # Get first non empty action name 
+        for item in self.capture_items:
+            if not item.action or item.action.name == "":
+                continue
+            
+            self.label = item.action.name
+            return
+    def sync_update(self, context, prop_name):
 
-class SpriteSheetMakerProperties(PropertyGroup):
+        row = get_current_row()
+        if not row.in_sync:
+            return
+    
+        SSM_OT_SyncRow.sync(context, {prop_name})
+
+    in_sync: BoolProperty(name="Sync Row", default=False)
+    label: StringProperty(name="Label", default="", description="The text that will be added on top of the row in the sprite sheet")
+    capture_items: CollectionProperty(type=SSM_CaptureItem)
+    capture_item_index: IntProperty(default=0, description="Pointer tracking active item inside collection")
+    
+    
     # Camera settings
-    custom_camera: PointerProperty(name="Custom Camera", type=bpy.types.Object, poll=lambda self, obj: obj.type == 'CAMERA')
-    to_auto_capture: BoolProperty(name="To Auto Capture", default=True)
+    custom_camera: PointerProperty(name="Custom Camera", type=Object, poll=lambda self, obj: obj.type == 'CAMERA', description="Custom camera object to use for rendering this row", update=lambda self, ctx: self.sync_update(ctx, "custom_camera"))
+    to_auto_capture: BoolProperty(name="To Auto Capture", default=True, description="Automatically calculate and position camera bounding box", update=lambda self, ctx: self.sync_update(ctx, "to_auto_capture"))
     camera_direction: EnumProperty(
         name="Camera Direction",
+        description="Direction from which the camera will look toward the targeted objects",
         items = [
             (CameraDirection.X.value, "X", "Camera pointing along the X axis"),
             (CameraDirection.Y.value, "Y", "Camera pointing along the Y axis"),
             (CameraDirection.Z.value, "Z", "Camera pointing along the Z axis"),
             (CameraDirection.NEG_X.value, "-X", "Camera pointing along the negative X axis"),
             (CameraDirection.NEG_Y.value, "-Y", "Camera pointing along the negative Y axis"),
-            (CameraDirection.NEG_Z.value, "-Z", "Camera pointing along the negative Z axis")
+            (CameraDirection.NEG_Z.value, "-Z", "Camera pointing along the negative Z axis"),
+            (CameraDirection.CUSTOM.value, "Custom", "Custom camera orientation")
         ],
-        default=CameraDirection.NEG_X.value
+        default=CameraDirection.NEG_X.value,
+        update=lambda self, ctx: self.sync_update(ctx, "camera_direction")
     )
-    pixels_per_meter: IntProperty(name="Pixels Per Meter", default=500, min=1, soft_max=5000)
-    camera_padding: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.05, min=0.0, soft_max=10.0)
-    consider_armature_bones: BoolProperty(default=False)
+    camera_orbit_z: FloatProperty(name="Orbit-Z", default=0.0, subtype='ANGLE', description="Orbit rotation around Z axis of capture objects")
+    camera_orbit_x: FloatProperty(name="Orbit-X", default=0.0, subtype='ANGLE', description="Orbit rotation around X axis of capture objects")
+    camera_roll: FloatProperty(name="Roll", default=0.0, subtype='ANGLE', description="Roll rotation around cameras on pointing axis")
+
+    h_center_object: PointerProperty(name="Horizontal Center Object", type=Object, description="Object whose origin will be used as the horizontal center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "h_center_object"))
+    h_center_bone: StringProperty(name="Horizontal Center Bone", default="", description="Bone whose origin will be used as the horizontal center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "h_center_bone"))
+    v_center_object: PointerProperty(name="Vertical Center Object", type=Object, description="Object whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_object"))
+    v_center_bone: StringProperty(name="Vertical Center Bone", default="", description="Bone whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_bone"))
+    
+    consider_armature_bones: BoolProperty(default=False, description="Include all armature bones when calculating auto-capture camera bounds to ensure they remain within camera view", update=lambda self, ctx: self.sync_update(ctx, "consider_armature_bones"))
+    pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, description="Number of pixels rendered per one world space meter unit", update=lambda self, ctx: self.sync_update(ctx, "pixels_per_meter"))
+    camera_padding_h: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding_h"))
+    camera_padding_v: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding_v"))
+
 
     # Pixelation settings
-    to_pixelate: BoolProperty(name="To Pixelate", default=False)
-    pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0)
-    color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000)
-    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.1)
-    alpha_step: FloatProperty(name="Alpha Step", default=0.0, min=0.0, max=1.1)
+    to_pixelate: BoolProperty(name="To Pixelate", default=False, description="If enabled the row is pixelated", update=lambda self, ctx: self.sync_update(ctx, "to_pixelate"))
+    pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0, description="By how much amount to pixelate the row", update=lambda self, ctx: self.sync_update(ctx, "pixelation_amount"))
+    color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000, description="How much amount of color to keep within the row", update=lambda self, ctx: self.sync_update(ctx, "color_amount"))
+    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.1, description="If any pixel in the row has a transparency less than this amount then it is discarded\nSet as 1.0 if to remove all semi-transparent pixel", update=lambda self, ctx: self.sync_update(ctx, "min_alpha"))
+    alpha_step: FloatProperty(name="Alpha Step", default=0.0, min=0.0, max=1.1, description="Ensures that all pixels have a transparency which is a multiple of this amount", update=lambda self, ctx: self.sync_update(ctx, "alpha_step"))
     pixelate_image_path: StringProperty(
         name="Pixelate Image Path",
-        subtype="FILE_PATH"
+        subtype="FILE_PATH",
+        description="Target image to pixelate",
+        update=lambda self, ctx: self.sync_update(ctx, "pixelate_image_path")
     )
+    
+    
+    # Flip settings
+    to_flip_h: BoolProperty(name="To Flip H", default=False, description="If enabled the rendered image is flipped horizontally before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_h"))
+    to_flip_v: BoolProperty(name="To Flip V", default=False, description="If enabled the rendered image is flipped vertically before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_v"))
+    
+    
+    # Manual frame settings
+    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the row\nIf disabled, the start & end frame of longest action will be taken")
+    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574)
+    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574)
+class SSM_Properties(PropertyGroup):
+
+    def update_temp_folder(self, context):
+        if self.temp_folder.startswith("//"):
+            self.temp_folder = bpy.path.abspath(self.temp_folder)
+    def update_output_folder(self, context):
+        if self.output_folder.startswith("//"):
+            self.output_folder = bpy.path.abspath(self.output_folder)
+    
 
     # Output settings
-    label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000)
-    surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000)
-    surrounding_margin_right: IntProperty(name="Surrounding Margin Right", default=15, min=0, soft_max=1000)
-    surrounding_margin_bottom: IntProperty(name="Surrounding Margin Bottom", default=15, min=0, soft_max=1000)
-    surrounding_margin_left: IntProperty(name="Surrounding Margin Left", default=15, min=0, soft_max=1000)
-    label_margin: IntProperty(name="Label Margin", default=15, min=0, soft_max=1000)
-    image_margin: IntProperty(name="Image Margin", default=15, min=0, soft_max=1000)
+    label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000, description="Font size of label text")
+    label_color: FloatVectorProperty(name="Label Color", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0), min=0.0, max=1.0, description="Color of the label text on top of each row")
+    background_color: FloatVectorProperty(name="Background Color", subtype='COLOR', size=4, default=(0.0, 0.0, 0.0, 0.0), min=0.0, max=1.0, description="Background color for entire sheet (or rows, or images based on combine mode)")
+    surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the top of the sprite sheet")
+    surrounding_margin_right: IntProperty(name="Surrounding Margin Right", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the right of the sprite sheet")
+    surrounding_margin_bottom: IntProperty(name="Surrounding Margin Bottom", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the bottom of the sprite sheet")
+    surrounding_margin_left: IntProperty(name="Surrounding Margin Left", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the left of the sprite sheet")
+    label_margin: IntProperty(name="Label Margin", default=15, min=0, soft_max=1000, description="Vertical margin gap (in pixels) between the label and the images")
+    image_margin: IntProperty(name="Image Margin", default=15, min=0, soft_max=1000, description="Horizonal margin gap (in pixels) between images within a row/row")
     sprite_consistency: EnumProperty(
         name="Sprite Align",
+        description="Dictates the dimension of sprites throughout the sprite sheet",
         items=[
             (SpriteConsistency.INDIVIDUAL.value, "Individual Consistent", "Each sprite fits it's own content"),
             (SpriteConsistency.ROW.value, "Row Consistent", "All sprites in a row have the same dimensions"),
-            (SpriteConsistency.ALL.value, "All Consistent", "All sprites in the sheet have the same dimensions")
+            (SpriteConsistency.ALL.value, "All Consistent", "All sprites throughout the sheet have the same dimensions")
         ],
         default=SpriteConsistency.INDIVIDUAL.value
     )
     sprite_align: EnumProperty(
         name="Sprite Align",
+        description="Dictates how the content should be aligned within the sprite",
         items=[
-            (SpriteAlign.TOP_LEFT.value, "Top Left", "Align sprite to vertical top & horizontal left"),
-            (SpriteAlign.TOP_CENTER.value, "Top Center", "Align sprite to vertical top & horizontal center"),
-            (SpriteAlign.TOP_RIGHT.value, "Top Right", "Align sprite to vertical top & horizontal right"),
-            (SpriteAlign.MIDDLE_LEFT.value, "Middle Left", "Align sprite to vertical middle & horizontal left"),
-            (SpriteAlign.MIDDLE_CENTER.value, "Middle Center", "Align sprite to vertical middle & horizontal center"),
-            (SpriteAlign.MIDDLE_RIGHT.value, "Middle Right", "Align sprite to vertical middle & horizontal right"),
-            (SpriteAlign.BOTTOM_LEFT.value, "Bottom Left", "Align sprite to vertical bottom & horizontal left"),
-            (SpriteAlign.BOTTOM_CENTER.value, "Bottom Center", "Align sprite to vertical bottom & horizontal center"),
-            (SpriteAlign.BOTTOM_RIGHT.value, "Bottom Right", "Align sprite to vertical bottom & horizontal right"),
+            (SpriteAlign.TOP_LEFT.value, "Top Left", "Align content to vertical top & horizontal left"),
+            (SpriteAlign.TOP_CENTER.value, "Top Center", "Align content to vertical top & horizontal center"),
+            (SpriteAlign.TOP_RIGHT.value, "Top Right", "Align content to vertical top & horizontal right"),
+            (SpriteAlign.MIDDLE_LEFT.value, "Middle Left", "Align content to vertical middle & horizontal left"),
+            (SpriteAlign.MIDDLE_CENTER.value, "Middle Center", "Align content to vertical middle & horizontal center"),
+            (SpriteAlign.MIDDLE_RIGHT.value, "Middle Right", "Align content to vertical middle & horizontal right"),
+            (SpriteAlign.BOTTOM_LEFT.value, "Bottom Left", "Align content to vertical bottom & horizontal left"),
+            (SpriteAlign.BOTTOM_CENTER.value, "Bottom Center", "Align content to vertical bottom & horizontal center"),
+            (SpriteAlign.BOTTOM_RIGHT.value, "Bottom Right", "Align content to vertical bottom & horizontal right"),
         ],
         default=SpriteAlign.BOTTOM_CENTER.value
     )
     combine_mode: EnumProperty(
         name="Combine Mode",
+        description="Dictates how all the rendered frames will be stitched together",
         items=[
             (CombineMode.IMAGES.value, "Images", "Render out individual images"),
-            (CombineMode.STRIPS.value, "Strips", "Render out separate strips for each action"),
+            (CombineMode.STRIPS.value, "Rows", "Render out separate row strips"),
             (CombineMode.SHEET.value, "Sheet", "Render out a single sprite sheet"),
         ],
         default=CombineMode.SHEET.value
     )
-    delete_temp_folder: BoolProperty(name="Delete Temp Folder", default=True)
+    delete_temp_folder: BoolProperty(name="Delete Temp Folder", default=True, description="Whether to delete the cache folder after sprite sheet is made\nHowever the folder will not be deleted incase of any error even if this is enabled")
+    temp_folder: StringProperty(
+        name="Temp Folder",
+        subtype="DIR_PATH",
+        description="Folder to use as input for 'Combine Sprites'",
+        update=update_temp_folder
+    )
     output_folder: StringProperty(
         name="Output Folder",
-        subtype="DIR_PATH"
+        subtype="DIR_PATH",
+        description="Folder in which the generated sprite sheet is saved into",
+        update=update_output_folder
     )
 
     # Collapsible section toggles
-    show_camera_settings: BoolProperty(name="Show Camera Settings", default=False)
-    show_pixelation_settings: BoolProperty(name="Show Pixelation Settings", default=False)
+    show_row_info: BoolProperty(name="Show Row Info", default=False)
     show_output_settings: BoolProperty(name="Show Output Settings", default=False)
-
-class SPRITESHEETMAKER_UL_AnimationStrips(bpy.types.UIList):
+class SSM_UL_AnimationRows(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
-        layout.label(text=item.label if item.label != "" else UNTITLED_STRIP_NAME, icon='SEQ_STRIP_DUPLICATE')
-
-class SPRITESHEETMAKER_UL_CaptureItems(bpy.types.UIList):
+        layout.label(text=item.label if item.label != "" else UNTITLED_ROW_NAME, icon='SEQ_STRIP_DUPLICATE')
+class SSM_UL_CaptureItems(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
 
         split = layout.split(factor=1/3, align=True)
@@ -190,84 +235,119 @@ class SPRITESHEETMAKER_UL_CaptureItems(bpy.types.UIList):
         col_obj.prop(item, "object", text="")
         col_action.prop(item, "action", text="")
         col_slot.prop(item, "slot", text="Slot")
+class SSM_OT_KeyListener(Operator):
+    bl_idname = "spritesheetmaker.key_listener"
+    bl_label = "Listen for Keys"
+    
+    is_alt_pressed = False
 
-class SPRITESHEETMAKER_OT_duplicate_strip(bpy.types.Operator):
-    bl_idname = "spritesheetmaker.duplicate_strip"
-    bl_label = "Duplicate Strip"
-    bl_description = "Duplicate the selected animation strip"
+    def modal(self, context, event):
+
+        # Check if event is alt key
+        is_alt = event.type in {'LEFT_ALT', 'RIGHT_ALT'}
+        if not is_alt:
+            return {'PASS_THROUGH'}
+
+
+        # Check if alt key pressed or released
+        if event.value == 'PRESS' and not self.is_alt_pressed:
+            SSM_OT_KeyListener.is_alt_pressed = True
+        elif event.value == 'RELEASE' and self.is_alt_pressed:
+            SSM_OT_KeyListener.is_alt_pressed = False
+
+        return {'PASS_THROUGH'}
+    def invoke(self, context, event):
+
+        # Return if requirements are not met
+        if not context.window_manager:
+            log("Window manager not found for key listener!")
+            return {'CANCELLED'}
+
+
+        log("Starting key listener...")
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+
+# Side Bar Buttons
+class SSM_OT_DuplicateRow(Operator):
+    bl_idname = "spritesheetmaker.duplicate_row"
+    bl_label = "Duplicate Row"
+    bl_description = "Duplicate the selected row"
     bl_options = {'UNDO'}
 
     def execute(self, context):
         # Get essentials
         scene = context.scene
-        strips = scene.animation_strips
-        idx = scene.strip_index
+        rows = scene.animation_rows
+        idx = scene.row_index
 
 
-        # Return if no strips exist
-        if idx < 0 or idx >= len(strips):
-            return bpy.ops.spritesheetmaker.add_strip()
+        # Return if no rows exist
+        if idx < 0 or idx >= len(rows):
+            return bpy.ops.spritesheetmaker.add_row()
 
 
-        # Store original strip
-        original_strip = strips[idx]
+        # Store original row
+        original_row = rows[idx]
 
 
-        # Create new strip
-        new_strip = strips.add()
-        new_strip.label = original_strip.label
-        new_strip.capture_items.clear()
-        for item in original_strip.capture_items:
-            dst_item = new_strip.capture_items.add()
-            dst_item.object = item.object
-            dst_item.action = item.action
-            dst_item.slot = item.slot
-        new_strip.manual_frames = original_strip.manual_frames
-        new_strip.frame_start = original_strip.frame_start
-        new_strip.frame_end = original_strip.frame_end
+        # Create new row
+        new_row = rows.add()
+        
+        # Copy basic properties dynamically
+        for prop in original_row.rna_type.properties:
+            if not prop.is_readonly and prop.identifier != "capture_items":
+                setattr(new_row, prop.identifier, getattr(original_row, prop.identifier))
+        
+        # Duplicate collection items dynamically
+        new_row.capture_items.clear()
+        for item in original_row.capture_items:
+            dst_item = new_row.capture_items.add()
+            for prop in item.rna_type.properties:
+                if not prop.is_readonly:
+                    setattr(dst_item, prop.identifier, getattr(item, prop.identifier))
 
 
-        # Set index of strip
-        new_index = len(strips) - 1
+        # Set index of row
+        new_index = len(rows) - 1
         target_index = idx + 1
-        strips.move(new_index, target_index)
-        scene.strip_index = target_index
+        rows.move(new_index, target_index)
+        scene.row_index = target_index
 
 
         return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_add_strip(bpy.types.Operator):
-    bl_idname = "spritesheetmaker.add_strip"
-    bl_label = "Add Strip"
-    bl_description = "Add new animation strip"
+class SSM_OT_AddRow(Operator):
+    bl_idname = "spritesheetmaker.add_row"
+    bl_label = "Add Row"
+    bl_description = "Add new animation row"
     bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
-        new = scene.animation_strips.add()
-        new.frame_start = 1
-        new.frame_end = 250
-        scene.strip_index = len(scene.animation_strips) - 1
+        scene.animation_rows.add()
+        # new.frame_start = 1
+        # new.frame_end = 250
+        SSM_OT_SyncRow.sync(context)
+        scene.row_index = len(scene.animation_rows) - 1
         return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_remove_strip(bpy.types.Operator):
-    bl_idname = "spritesheetmaker.remove_strip"
-    bl_label = "Remove Strip"
-    bl_description = "Delete animation strip"
+class SSM_OT_RemoveRow(Operator):
+    bl_idname = "spritesheetmaker.remove_row"
+    bl_label = "Remove Row"
+    bl_description = "Remove selected animation row"
     bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
-        idx = scene.strip_index
-        if 0 <= idx < len(scene.animation_strips):
-            scene.animation_strips.remove(idx)
-            scene.strip_index = max(0, min(len(scene.animation_strips) - 1, idx - 1))
+        idx = scene.row_index
+        if 0 <= idx < len(scene.animation_rows):
+            scene.animation_rows.remove(idx)
+            scene.row_index = max(0, min(len(scene.animation_rows) - 1, idx - 1))
         return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_move_strip(bpy.types.Operator):
-    bl_idname = "spritesheetmaker.move_strip"
-    bl_label = "Move Strip"
-    bl_description = "Move animation strip up or down"
+class SSM_OT_MoveRow(Operator):
+    bl_idname = "spritesheetmaker.move_row"
+    bl_label = "Move Row"
+    bl_description = "Move animation row up or down"
     bl_options = {'UNDO'}
 
     direction: EnumProperty(
@@ -279,57 +359,382 @@ class SPRITESHEETMAKER_OT_move_strip(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
-        idx = scene.strip_index
-        strips = scene.animation_strips
+        idx = scene.row_index
+        rows = scene.animation_rows
 
         if self.direction == "UP" and idx > 0:
-            strips.move(idx, idx - 1)
-            scene.strip_index -= 1
+            rows.move(idx, idx - 1)
+            scene.row_index -= 1
 
-        elif self.direction == "DOWN" and idx < len(strips) - 1:
-            strips.move(idx, idx + 1)
-            scene.strip_index += 1
+        elif self.direction == "DOWN" and idx < len(rows) - 1:
+            rows.move(idx, idx + 1)
+            scene.row_index += 1
 
         return {"FINISHED"}
+class SSM_OT_SyncRow(Operator):
+    bl_idname = "spritesheetmaker.sync_rows"
+    bl_label = "Sync Row"
+    bl_description = "All rows which have this enabled will have their properties in sync with each other\nAlt + Click to assign properties of current row to all other rows which are in sync"
+    bl_options = {'UNDO'}
+    
+    _is_syncing = False
 
-class SPRITESHEETMAKER_OT_add_capture_item(bpy.types.Operator):
+
+    @staticmethod
+    def _copy_properties(src_row, dest_row, properties=None):
+
+        # Assign all if no properties provided
+        properties = set(properties) if properties else set()
+        if not properties: 
+            for p in src_row.rna_type.properties:
+                if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
+                    properties.add(p.identifier)
+        
+
+        # Copy paste all properties from src to dest
+        for prop in properties:
+            if hasattr(dest_row, prop):
+                setattr(dest_row, prop, getattr(src_row, prop))
+
+
+    @staticmethod
+    def _sync_impl(context, properties=None):
+        
+        # Get synced row
+        scene = context.scene
+        rows = scene.animation_rows
+        curr_idx = scene.row_index
+        if(rows[curr_idx].in_sync):
+            synced_row = rows[curr_idx]
+        else:
+            _, synced_row = get_synced_row()
+
+
+        # Return if no synced row
+        if(synced_row == None):
+            return
+
+
+        # Sync properties to all other rows
+        for i, dest_row in enumerate(rows):
+            if i == curr_idx or not dest_row.in_sync:
+                continue
+            
+            SSM_OT_SyncRow._copy_properties(synced_row, dest_row, properties)
+            
+
+    @staticmethod
+    def sync(context, properties=None):
+
+        # To avoid infinite recursion
+        if SSM_OT_SyncRow._is_syncing:
+            return
+        
+
+        # Mark as sync started
+        SSM_OT_SyncRow._is_syncing = True
+
+
+        # Sync
+        try:
+            SSM_OT_SyncRow._sync_impl(context, properties)
+            log(f"Synced {properties if properties != None else 'All'} across all rows!")
+        except Exception as e:
+            log(f"Failed to sync properties '{properties}' across all rows! Error: {e} \n {traceback.format_exc()}")
+
+    
+        # Mark as sync complete
+        SSM_OT_SyncRow._is_syncing = False
+
+
+    def execute(self, context):
+
+        # Toggle in sync button
+        curr_row = get_current_row()
+        if(not curr_row):
+            return {'FINISHED'}
+
+
+        curr_row.in_sync = not curr_row.in_sync
+        
+
+        # Return if toggled off or nothing to sync
+        if(not curr_row.in_sync or not are_any_in_sync()):
+            return {'FINISHED'}
+        
+
+        # If alt pressed; synchronize all other rows with this row
+        if(SSM_OT_KeyListener.is_alt_pressed):
+            SSM_OT_SyncRow.sync(context)
+            return {'FINISHED'}
+
+
+        # Sync properties of this row with others
+        _, synced_row = get_synced_row()
+        SSM_OT_SyncRow._copy_properties(synced_row, curr_row)
+
+
+        return {'FINISHED'}
+class SSM_OT_PlayCaptureItems(Operator):
+    bl_idname = "spritesheetmaker.play_capture_items"
+    bl_label = "Play Capture Items"
+    bl_description = "Preview all animations associated with this row"
+    bl_options = {'UNDO'}
+
+    def execute(self, context):
+
+        # Return if no valid row selected
+        scene = context.scene
+        si = scene.row_index
+        if si < 0 or si >= len(scene.animation_rows):
+            log("No valid row selected to play capture items!")
+            return {'CANCELLED'}
+
+        
+        # Return if no capture items
+        row = scene.animation_rows[si]
+        if si < 0 or si >= len(scene.animation_rows) or len(row.capture_items) == 0:
+            return {'CANCELLED'}
+        
+
+        # Assign all actions to respective Objects
+        min_frame = float('inf')
+        max_frame = float('-inf')
+        has_valid_action = False
+        for item in row.capture_items:
+            if not item.object or not item.action or not item.object.animation_data:
+                continue
+        
+            item.object.animation_data.action = item.action
+
+            # Assign user provided slot else default slot
+            slot_name = f"OB{item.slot}"
+            if item.slot != "" and slot_name in item.action.slots:
+                item.object.animation_data.action_slot = item.action.slots[slot_name]
+            elif hasattr(item.object.animation_data, "action_suitable_slots") and len(item.object.animation_data.action_suitable_slots) > 0:
+                item.object.animation_data.action_slot = item.object.animation_data.action_suitable_slots[0]
+
+            if item.action.frame_range:
+                min_frame = min(min_frame, item.action.frame_range[0])
+                max_frame = max(max_frame, item.action.frame_range[1])
+                has_valid_action = True
+        
+
+        # Set start and end frame
+        if has_valid_action:
+            scene.frame_start = int(min_frame)
+            scene.frame_end = int(max_frame)
+            scene.frame_current = int(min_frame)
+        
+
+        # Play animations
+        if not context.screen.is_animation_playing:
+            bpy.ops.screen.animation_play() 
+        
+        
+        return {'FINISHED'}
+class SSM_OT_AddCaptureItem(Operator):
     bl_idname = "spritesheetmaker.add_capture_item"
-    bl_label = "Add Capture Item"
+    bl_label = "Add New Capture Item"
     bl_description = "Add capture item"
     bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
-        si = scene.strip_index
-        if si < 0 or si >= len(scene.animation_strips):
+        si = scene.row_index
+        if si < 0 or si >= len(scene.animation_rows):
             return {'CANCELLED'}
         
-        strip = scene.animation_strips[si]
-        strip.capture_items.add()
-        strip.capture_item_index = len(strip.capture_items) - 1
+        row = scene.animation_rows[si]
+        row.capture_items.add()
+        row.capture_item_index = len(row.capture_items) - 1
         return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_remove_capture_item(bpy.types.Operator):
+class SSM_OT_RemoveCaptureItem(Operator):
     bl_idname = "spritesheetmaker.remove_capture_item"
-    bl_label = "Remove Capture Item"
+    bl_label = "Remove Selected Capture Item"
     bl_description = "Remove capture item"
     bl_options = {'UNDO'}
 
     def execute(self, context):
         scene = context.scene
-        si = scene.strip_index
-        if si < 0 or si >= len(scene.animation_strips):
+        si = scene.row_index
+        if si < 0 or si >= len(scene.animation_rows):
             return {'CANCELLED'}
-        strip = scene.animation_strips[si]
-        ii = strip.capture_item_index
-        if 0 <= ii < len(strip.capture_items):
-            strip.capture_items.remove(ii)
-            strip.capture_item_index = max(0, ii - 1)
+        row = scene.animation_rows[si]
+        ii = row.capture_item_index
+        if 0 <= ii < len(row.capture_items):
+            row.capture_items.remove(ii)
+            row.capture_item_index = max(0, ii - 1)
         return {'FINISHED'}
 
 
 # Primary Buttons
-class SPRITESHEETMAKER_OT_CreateAutoCamera(Operator):
+class SSM_OT_ExportSettings(Operator, ExportHelper):
+    bl_idname = "spritesheetmaker.export_settings"
+    bl_label = "Export"
+    bl_description = "Save current settings as .json file to import later"
+    bl_options = {'UNDO'}
+
+    filename_ext = ".json"
+    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
+
+    def get_export_data(self, context):
+        props = context.scene.sprite_sheet_maker_props
+        export_data = { "rows": [], "props": {} }
+        
+
+        # Store all rows
+        for row in context.scene.animation_rows:
+
+            # Store all basic properties e.g. label, custom_camera, etc
+            s_data = {}
+            for p in row.rna_type.properties:
+                if not p.is_readonly and p.identifier not in {"capture_items", "name"} and p.identifier not in NON_SERIALIZABLE_PROPERTIES:
+                    s_data[p.identifier] = getattr(row, p.identifier)
+            
+
+            # Store object pointer properties as names since objects are not json serializable
+            for prop_name in NON_SERIALIZABLE_PROPERTIES:
+                obj = getattr(row, prop_name)
+                s_data[prop_name] = obj.name if obj else ""
+            
+            
+            # Store all capture items
+            s_data["capture_items"] = []
+            for item in row.capture_items:
+                i_data = {}
+                i_data["object"] = item.object.name if item.object else ""
+                i_data["action"] = item.action.name if item.action else ""
+                i_data["slot"] =  item.slot
+                s_data["capture_items"].append(i_data)
+            
+
+            # Add to all rows data 
+            export_data["rows"].append(s_data)
+
+        
+        # Store all common properties
+        for p in props.rna_type.properties:
+            if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
+                prop_value = getattr(props, p.identifier)
+                export_data["props"][p.identifier] = list(prop_value) if getattr(p, "is_array", False) else prop_value
+
+                
+        return export_data
+    def invoke(self, context, event):
+        self.filepath = DEFAULT_SETTINGS_FILE_NAME
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    def execute(self, context):
+
+        # Return if file path not set
+        if not self.filepath:
+            log("Export path is empty", True, "ERROR")
+            return {'CANCELLED'}
+
+
+        # Store into json file
+        try:
+            export_data = self.get_export_data(context)
+            with open(self.filepath, 'w') as file:
+                json.dump(export_data, file, indent=4)
+
+            log(f"Exported settings to {self.filepath}", True)
+            return {'FINISHED'}
+        except Exception as e:
+            log(f"Failed to export settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
+            return {'CANCELLED'}
+class SSM_OT_ImportSettings(Operator, ImportHelper):
+    bl_idname = "spritesheetmaker.import_settings"
+    bl_label = "Import"
+    bl_description = "Import saved settings from .json file"
+    bl_options = {'UNDO'}
+
+    filename_ext = ".json"
+    filter_glob: StringProperty(default="*.json", options={'HIDDEN'})
+
+
+    def load_import_data(self, context, data):
+        
+        # Get props & scene
+        props = context.scene.sprite_sheet_maker_props
+        scene = context.scene
+
+
+        # Clear previous animation rows
+        scene.animation_rows.clear()  
+
+
+        # Create all new rows
+        for row_data in data.get("rows", []):
+
+            # Add new row
+            row = scene.animation_rows.add()
+
+            # Load all basic properties e.g. label, etc
+            for key, val in row_data.items():
+                if key != "capture_items" and key not in NON_SERIALIZABLE_PROPERTIES and hasattr(row, key):
+                    setattr(row, key, val)
+
+            # Load object pointer properties by resolving stored name back to object
+            for prop_name in NON_SERIALIZABLE_PROPERTIES:
+                obj_name = row_data.get(prop_name, "")
+                setattr(row, prop_name, bpy.data.objects[obj_name] if obj_name in bpy.data.objects else None)
+            
+            # Load all capture items
+            for item_data in row_data.get("capture_items", []):
+                item = row.capture_items.add()
+
+                # Add object to capture item
+                if(item_data.get("object") in bpy.data.objects):
+                    item.object = bpy.data.objects[item_data["object"]]
+                else:
+                    missing_obj = item_data.get('object')
+                    log(f"Missing object '{missing_obj}' found while importing!")
+                    item.object = None
+
+
+                # Add action to capture item
+                if(item_data.get("action") in bpy.data.actions):
+                    item.action = bpy.data.actions[item_data["action"]]
+                else:
+                    missing_action = item_data.get('action')
+                    log(f"Missing action '{missing_action}' found while importing!")
+                    item.action = None
+
+                
+                # Add slot to capture item
+                item.slot = item_data.get("slot", "")
+
+
+        # Load all common properties
+        for key, val in data.get("props", {}).items():
+            if hasattr(props, key):
+                setattr(props, key, val)
+    def invoke(self, context, event):
+        self.filepath = DEFAULT_SETTINGS_FILE_NAME
+        context.window_manager.fileselect_add(self)
+        return {'RUNNING_MODAL'}
+    def execute(self, context):
+
+        # Return if file path does not exist
+        if not os.path.exists(self.filepath):
+            log("Import path does not exist", True, "ERROR")
+            return {'CANCELLED'}
+        
+
+        # Load from json file
+        try:
+            with open(self.filepath, 'r') as file:
+                data = json.load(file)
+            
+            self.load_import_data(context, data)
+            log(f"Imported settings from {self.filepath}")
+            return {'FINISHED'}
+        except Exception as e:
+            log(f"Failed to import settings Error {e} \n {traceback.format_exc()}", True, "CANCEL")
+            return {'CANCELLED'}
+class SSM_OT_CreateAutoCamera(Operator):
     bl_idname = "spritesheetmaker.create_auto_camera"
     bl_label = "Create Auto Camera"
     bl_description = "Create camera from given auto capture parameters"
@@ -338,150 +743,203 @@ class SPRITESHEETMAKER_OT_CreateAutoCamera(Operator):
     def execute(self, context):
 
         # Get assigned custom camera
-        props = bpy.context.scene.sprite_sheet_maker_props
-        cam_obj = props.custom_camera
+        curr_row = get_current_row()
+        cam_obj = curr_row.custom_camera
 
 
-        # Create new camera if no custom camera assigned
-        if(cam_obj is None):
-            cam_name = f"New{CAMERA_NAME}"
-            cam_data = bpy.data.cameras.new(name=cam_name)
-            cam_obj = bpy.data.objects.new(cam_name, cam_data)
-            bpy.context.collection.objects.link(cam_obj)
-
+        # Return if any invalid property in row
+        curr_row = get_current_row()
+        if(not SSM_OT_CreateSheet.check_row(curr_row)):
+            return {'FINISHED'}
+        
 
         # Set it up based on auto parameters
-        param = auto_capture_param_from_props()
-        setup_auto_camera(param, cam_obj)
+        param = gen_auto_capture_param(curr_row)
+        setup_auto_camera(cam_obj, param)
 
 
         return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_PixelateImage(Operator):
+class SSM_OT_PixelateImage(Operator):
     bl_idname = "spritesheetmaker.pixelate_image"
     bl_label = "Pixelate Image"
-    bl_description = "Pixelate given image"
+    bl_description = "Pixelate given test image based on the pixelation properties assigned"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
 
         # Get props
-        props = bpy.context.scene.sprite_sheet_maker_props
+        curr_row = get_current_row()
 
         
         # Return if invalid test image path
-        if(not os.path.exists(props.pixelate_image_path)):
-            popup("'Test image' is invalid!", "CANCEL")
+        if(not os.path.exists(curr_row.pixelate_image_path)):
+            log("'Test image' is invalid!", True, "CANCEL")
             return {'FINISHED'}
 
 
         # Combine images together into single file and paste in output
         try:
             # Generate param
-            param = pixelate_param_from_props()
-
-            # Pixelate the image
+            param = gen_pixelate_param(curr_row)
             pixelated_output_path = get_pixelated_img_path()
-            pixelate_images({ props.pixelate_image_path:pixelated_output_path }, param)
+            pixelate_images({ curr_row.pixelate_image_path:pixelated_output_path }, param)
 
             # Notify success
-            popup(f"Pixelated image successfully at {pixelated_output_path}")
+            log(f"Pixelated image successfully at {pixelated_output_path}", True)
         except Exception as e:
-            error_msg = f"Error occurred while pixelating image! Make sure you have passed a valid image \n {e} \n {traceback.format_exc()}"
-            popup(error_msg)
-            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
+            log(f"Error occurred while pixelating image! Make sure you have passed a valid image \n {e} \n {traceback.format_exc()}", True)
      
 
         return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_CombineSprites(Operator):
+class SSM_OT_CombineSprites(Operator):
     bl_idname = "spritesheetmaker.combine_sprites"
     bl_label = "Combine Sprites"
-    bl_description = "Combine multiple sprites into a single sprite sheet"
+    bl_description = "Combine all sprites from Temp Folder into a single sprite sheet"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
 
         # Get props
         props = bpy.context.scene.sprite_sheet_maker_props
-
         
+
+        # Return if invalid temp folder
+        if(props.temp_folder == "" or not os.path.exists(props.temp_folder)):
+            log("'Temp Folder' is invalid!", True, "CANCEL")
+            return {'FINISHED'}
+
+
         # Return if invalid output folder
         if(props.output_folder == "" or not os.path.exists(props.output_folder)):
-            popup("'Output Folder' is invalid!", "CANCEL")
+            log("'Output Folder' is invalid!", True, "CANCEL")
             return {'FINISHED'}
+        
 
-
-        # Combine images together into single file and paste in output
+        # Combine sprites from temp folder
         try:
-            param = assemble_param_from_props()
-            assemble_images(param)
+            param = gen_assemble_param()
+            input_folder_path = props.temp_folder
+            output_path = get_sprite_sheet_path(props.combine_mode)
+            assemble_images(param, input_folder_path, output_path)
+            log(f"Combined sprites successfully at {os.path.normpath(output_path)}", True)
         except Exception as e:
-            error_msg = f"Error occurred while combining sprites!\nMake sure the provided 'Output Folder' follows this structure:\nMyFolder\n   - 1_Walking\n      - 1.png\n      - 2.png\n   - 2_Attacking\n      - 1.png\n      - 2.png\n\nFailed to assemble frames into single sprite sheet: {e} \n {traceback.format_exc()}"
-            popup(error_msg)
-            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
-            return {'FINISHED'}
+            log(f"Error occurred while combining sprites!\nMake sure the provided 'Output Folder' follows this structure:\nMyFolder\n   - 1_Walking\n      - 1.png\n      - 2.png\n   - 2_Attacking\n      - 1.png\n      - 2.png\n\nFailed to assemble frames into single sprite sheet: {e} \n {traceback.format_exc()}", True)
      
 
-        # Notify success
-        popup(f"Combined sprites successfully at {os.path.normpath(param.output_path)}")
         return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_CreateSingleSprite(bpy.types.Operator):
+class SSM_OT_CreateSingleSprite(Operator):
     bl_idname = "spritesheetmaker.create_single"
     bl_label = "Create Single Sprite"
-    bl_description = "Render out a single sprite"
+    bl_description = "Render out a single sprite of currently selected row\nUseful for verifying settings before rendering the full sheet"
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
         
-        # Get props
+        # Get Scene & props
+        scene = bpy.context.scene
         props = context.scene.sprite_sheet_maker_props
 
 
-        # Return if no objects given
-        objects_to_capture = get_objects_to_capture() if props.to_auto_capture else []
-        if(props.to_auto_capture and len(objects_to_capture) == 0):
-            popup("Empty or invalid objects in 'Capture Items'!", "CANCEL")
-            return {'FINISHED'}
-
-            
-        # Return if manual cameras has not been set
-        if(not props.to_auto_capture and ((props.custom_camera is None) or (props.custom_camera.type != 'CAMERA'))):
-            popup("Either set 'Custom Camera' or enable 'To Auto Capture' first!", "CANCEL")
+        # Return if no rows
+        if(len(scene.animation_rows) == 0):
+            log("Empty 'Rows'!", True, "CANCEL")
             return {'FINISHED'}
 
 
-        # Return if invalid output folder
-        if(props.output_folder == "" or not os.path.exists(props.output_folder)):
-            popup("'Output Folder' is invalid!", "CANCEL")
+        # Return if any invalid property in row
+        curr_row = get_current_row()
+        if(not SSM_OT_CreateSheet.check_row(curr_row)):
             return {'FINISHED'}
         
 
-        # Create single sprite
+        # Return if invalid output folder
+        if(props.output_folder == "" or not os.path.exists(props.output_folder)):
+            log("'Output Folder' is invalid!", True, "CANCEL")
+            return {'FINISHED'}
+        
+
+        # Create single sprite by making a sheet with only 1 row/row with only 1 frame
         try:
-            # Create sprite
-            param = sprite_param_from_props()
-            SPRITE_SHEET_MAKER.create_sprite(param)
 
-            # Add image and margin
-            assemble_param = assemble_param_from_props()
-            add_label_to_image(param.output_file_path, get_label_text(), assemble_param)
+            # Row parameters            
+            row_param  = gen_row_param(get_current_row())
+            row_param.manual_frames = True
+            row_param.frame_start = bpy.context.scene.frame_current
+            row_param.frame_end = bpy.context.scene.frame_current
 
-            popup(f"Created single sprite successfully at {os.path.normpath(param.output_file_path)}")
+
+            # Sheet parameters
+            sheet_param:SpriteSheetParam = gen_sprite_sheet_param()
+            sheet_param.assemble_param.combine_mode = CombineMode.SHEET
+            sheet_param.animation_rows = [row_param]
+            sheet_param.delete_temp_folder = True
+
+
+            # Generate Spritesheet as single sprite
+            output_path = get_sprite_sheet_path(props.combine_mode, True)
+            SPRITE_SHEET_MAKER.create_sprite_sheet(sheet_param, output_path)
+            log(f"Created single sprite successfully at {os.path.normpath(output_path)}", True)
             return {'FINISHED'}
         except Exception as e:
             error_msg = f"Error occurred while creating single sprite!\n {e} \n {traceback.format_exc()}"
-            popup(error_msg)
-            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
+            log(error_msg, True)
             return {'FINISHED'}
-
-class SPRITESHEETMAKER_OT_CreateSheet(Operator):
+class SSM_OT_CreateSheet(Operator):
     bl_idname = "spritesheetmaker.create_sheet"
     bl_label = "Create Sprite Sheet"
-    bl_description = "Create entire sheet"
+    bl_description = "Render out the entire sprite sheet"
     bl_options = {'REGISTER', 'UNDO'}
 
+
+    @staticmethod
+    def check_row(row):
+
+        # Return if empty capture items
+        objects = get_objects_to_capture(row)
+        if(row.to_auto_capture and len(objects) == 0):
+            log(f"Empty or Invalid 'Capture Items' in '{get_row_label(row)}' Row!", True, "CANCEL")
+            return False
+
+            
+        # Return if any invalid objects or actions
+        for capture_item in row.capture_items:
+            if (not capture_item.object):
+                log(f"Invalid Object in 'Capture Items' of '{get_row_label(row)}' Row!", True, "CANCEL")
+                return False
+            
+            try:  # To ensure "ReferenceError: StructRNA of type Action has been removed" does not occur
+                if(capture_item.action != None):
+                    capture_item.action.name
+            except ReferenceError as e:
+                log(f"Invalid Action in 'Capture Items' of '{get_row_label(row)}' Row!", True, "CANCEL")
+                return False
+
+
+        # Return if neither auto capture nor custom camera has been set
+        if(not row.to_auto_capture and (row.custom_camera is None)):
+            log(f"Either set a valid 'Custom Camera' or enable 'To Auto Capture'\nin '{get_row_label(row)}' Row!", True, "CANCEL")
+            return False
+        
+
+        # Return if invalid custom camera
+        if(not row.to_auto_capture and not is_valid(row.custom_camera, False)):
+            log(f"Invalid 'Custom Camera' in '{get_row_label(row)}' Row!", True, "CANCEL")
+            return False
+
+
+        # Return if invalid center obj H
+        if(row.to_auto_capture and (row.h_center_object is not None) and (not is_valid(row.h_center_object))):
+            log(f"Invalid 'Center Obj H' in '{get_row_label(row)}' Row!", True, "CANCEL")  # Return if invalid Center Obj H
+            return False
+
+
+        # Return if invalid center obj V
+        if(row.to_auto_capture and (row.v_center_object is not None) and (not is_valid(row.v_center_object))):
+            log(f"Invalid 'Center Obj V' in '{get_row_label(row)}' Row!", True, "CANCEL")
+            return False
+
+
+        return True
     def execute(self, context):
 
         # Get Scene & props
@@ -489,244 +947,236 @@ class SPRITESHEETMAKER_OT_CreateSheet(Operator):
         props = context.scene.sprite_sheet_maker_props
 
 
-        # Return if no strips
-        if(len(scene.animation_strips) == 0):
-            popup("Empty 'Animation Strips'!", "CANCEL")
+        # Return if no rows
+        if(len(scene.animation_rows) == 0):
+            log("Empty 'Rows'!", True, "CANCEL")
             return {'FINISHED'}
 
 
-        # Return in case of anything invalid in strip
-        for strip_item in scene.animation_strips:
-
-            # Return if empty capture items
-            if(len(strip_item.capture_items) == 0):
-                popup(f"Empty 'Capture Items' in '{strip_item.label if strip_item.label!='' else UNTITLED_STRIP_NAME}' Strip!", "CANCEL")
-                return {'FINISHED'}
-
-            # Return if any invalid objects or actions
-            valid_action_count = 0
-            for capture_item in strip_item.capture_items:
-                if (not capture_item.object):
-                    popup(f"Invalid Object in 'Capture Items' of '{strip_item.label if strip_item.label!='' else UNTITLED_STRIP_NAME}' Strip!", "CANCEL")
-                    return {'FINISHED'}
-                
-                try:  # To ensure "ReferenceError: StructRNA of type Action has been removed" does not occur
-                    if(capture_item.action != None):
-                        capture_item.action.name
-                        valid_action_count += 1
-                except ReferenceError as e:
-                    popup(f"Invalid Action in 'Capture Items' of '{strip_item.label if strip_item.label!='' else UNTITLED_STRIP_NAME}' Strip!", "CANCEL")
-                    return {'FINISHED'}
-            
-            # Return if not a single valid action was providede
-            if(valid_action_count == 0):
-                popup(f"Not a single Action provided in 'Capture Items' of '{strip_item.label if strip_item.label!='' else UNTITLED_STRIP_NAME}' Strip!", "CANCEL")
+        # Return in case of anything invalid in row
+        for row in scene.animation_rows:
+            if(not SSM_OT_CreateSheet.check_row(row)):
                 return {'FINISHED'}
             
-        
-        # Return if manual cameras has not been set
-        if(not props.to_auto_capture and ((props.custom_camera is None) or (props.custom_camera.type != 'CAMERA'))):
-            popup("Either set 'Custom Camera' or enable 'To Auto Capture' first!", "CANCEL")
-            return {'FINISHED'}
-
 
         # Return if invalid output folder
         if(props.output_folder == "" or not os.path.exists(props.output_folder)):
-            popup("'Output Folder' is invalid!", "CANCEL")
+            log("'Output Folder' is invalid!", True, "CANCEL")
             return {'FINISHED'}
 
 
-        # Get the window manager and create a progress bar
-        wm = bpy.context.window_manager
-
-
-        # Create sprie sheet
+        # Create sprite sheet
         try:
-            def begin_row_progress(strip_label, total_frame):
-                wm.progress_begin(0, total_frame)  # Start progress bar
+            wm = bpy.context.window_manager   # Get the window manager & create a progress bar
 
-            def update_frame_progress(strip_label, frame):
+            def begin_row_progress(row_label, total_frame):
+                wm.progress_begin(0, total_frame)  # Start progress bar
+            def update_frame_progress(row_label, frame):
                 wm.progress_update(frame)  # Update progress bar
             
             SPRITE_SHEET_MAKER.on_sheet_row_creating.subscribe(begin_row_progress)
             SPRITE_SHEET_MAKER.on_sheet_frame_creating.subscribe(update_frame_progress)
 
-            param = sprite_sheet_param_from_props()
-            SPRITE_SHEET_MAKER.create_sprite_sheet(param)
-            popup(f"Created successfully at {os.path.normpath(param.assemble_param.output_path)}")
+            param = gen_sprite_sheet_param()
+            output_path = get_sprite_sheet_path(props.combine_mode)
+            SPRITE_SHEET_MAKER.create_sprite_sheet(param, output_path)
+            log(f"Created successfully at {os.path.normpath(output_path)}", True)
         except Exception as e:
             error_msg = f"Error occurred while trying to create sprite sheet!\n{e}\n{traceback.format_exc()}"
-            popup(error_msg)
-            print(f"[SpriteSheetMaker {datetime.now()}] {error_msg}")
+            log(error_msg, True)
             return {'FINISHED'}
-    
+        finally:
+            wm.progress_end() # Finish the progress bar
+        
 
-        # Finish the progress bar
-        wm.progress_end()
         return {'FINISHED'}
 
 
 # Main Panel
-class SPRITESHEETMAKER_PT_MainPanel(Panel):
+class SSM_PT_MainPanel(Panel):
     bl_label = "SpriteSheetMaker"
-    bl_idname = "SPRITESHEETMAKER_PT_MainPanel"
+    bl_idname = "SSM_PT_MainPanel"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = 'SpriteSheetMaker'
 
 
+    def draw_row_info(self, context, scene, ui_box):
+
+        # Label
+        row = scene.animation_rows[scene.row_index]
+        split = ui_box.split(factor=0.25)
+        split.label(text="Label")
+        ui_label_line = split.row(align=False)
+        col_label_prop = ui_label_line.column(align=True)
+        col_label_prop.prop(row, 'label', text='')
+
+
+        # Sync Button
+        col_sync_btn = ui_label_line.column(align=True)
+        curr_row = get_current_row()
+        col_sync_btn.operator("spritesheetmaker.sync_rows", text="", icon='INTERNET', depress=curr_row.in_sync)
+
+
+        # Capture Items
+        ui_box.label(text="Capture Items")
+        ui_capture_line = ui_box.row()
+        ui_capture_line.template_list('SSM_UL_CaptureItems', '', row, 'capture_items', row, 'capture_item_index', rows=3, maxrows=3)
+        col = ui_capture_line.column(align=True)
+        col.operator('spritesheetmaker.play_capture_items', icon='PLAY', text='')
+        col.separator()
+        col.operator('spritesheetmaker.add_capture_item', icon='ADD', text='')
+        col.operator('spritesheetmaker.remove_capture_item', icon='REMOVE', text='')
+        
+        
+        # Custom Camera
+        split = ui_box.split(factor=0.55)
+        split.label(text="Custom Camera")
+        split.prop(row, "custom_camera", text="")
+        
+
+        # To Auto Capture
+        ui_box.prop(row, "to_auto_capture")
+        if row.to_auto_capture:
+
+            # Indent sub props
+            sub_box = ui_box.row().split(factor=0.02)
+            sub_box.label(text="")
+            sub_col = sub_box.column()
+
+            # Camera Direction
+            split = sub_col.split(factor=0.60)
+            split.label(text="Camera Direction")
+            split.prop(row, "camera_direction", text="")
+
+            # Custom Direction
+            if row.camera_direction == CameraDirection.CUSTOM.value:
+                sub_col.prop(row, "camera_orbit_z")
+                sub_col.prop(row, "camera_orbit_x")
+                sub_col.prop(row, "camera_roll")
+
+            # Horizontal Center Object
+            split = sub_col.split(factor=0.40)
+            split.label(text="Center Obj H")
+            col = split.column(align=True)
+            col.prop(row, "h_center_object", text="")
+            if row.h_center_object and row.h_center_object.type == 'ARMATURE':
+                col.prop_search(row, "h_center_bone", row.h_center_object.pose, "bones", text="Bone")
+
+            # Vertical Center Object
+            split = sub_col.split(factor=0.40)
+            split.label(text="Center Obj V")
+            col = split.column(align=True)
+            col.prop(row, "v_center_object", text="")
+            if row.v_center_object and row.v_center_object.type == 'ARMATURE':
+                col.prop_search(row, "v_center_bone", row.v_center_object.pose, "bones", text="Bone")
+
+            # Consider Armature Bones
+            sub_col.prop(row, "consider_armature_bones", text="Consider Armature Bones")
+            sub_col.prop(row, "camera_padding_h", text="Camera Padding H")  # Camera Padding Horizontal
+            sub_col.prop(row, "camera_padding_v", text="Camera Padding V")  # Camera Padding Vertical
+            sub_col.prop(row, "pixels_per_meter", text="Pixels Per Meter")  # Pixels Per Meter 
+
+            # Create Auto Camera Button
+            sub_col.separator(factor=0.25)
+            ui_line = sub_col.row()
+            button_text = "Create Auto Camera" if row.custom_camera == None else "Modify Custom Camera"
+            ui_line.operator("spritesheetmaker.create_auto_camera", text=button_text, icon="OUTLINER_OB_CAMERA")
+
+
+        # To Pixelate
+        ui_box.prop(row, "to_pixelate")
+        if row.to_pixelate:
+            # Indent sub props
+            sub_box = ui_box.row().split(factor=0.02)
+            sub_box.label(text="")
+            sub_col = sub_box.column()
+            
+            sub_col.prop(row, "pixelation_amount", text="Pixelation")  # Pixelation
+            sub_col.prop(row, "color_amount", text="Color Amount")  # Color Amount
+            sub_col.prop(row, "min_alpha", text="Min Alpha")  # Min Alpha
+            sub_col.prop(row, "alpha_step", text="Alpha Step")  # Alpha Step
+
+            # Test Image
+            ui_line = sub_col.row()
+            split = ui_line.split(factor=0.45)
+            split.label(text="Test Image")
+            split.prop(row, "pixelate_image_path", text="")
+
+            # Pixelate Test Image Button
+            ui_line = sub_col.row()
+            ui_line.operator("spritesheetmaker.pixelate_image", text="Pixelate Test Image", icon="MOD_REMESH")
+
+
+        # To Flip H & V
+        ui_box.prop(row, "to_flip_h")
+        ui_box.prop(row, "to_flip_v")
+        
+
+        # Manual Frames
+        ui_box.prop(row, "manual_frames")
+        if row.manual_frames:  # Frame Start & End
+            
+            # Indent sub props
+            sub_box = ui_box.row().split(factor=0.02)
+            sub_box.label(text="")
+            sub_col = sub_box.column()
+            
+            ui_line2 = sub_col.row(align=True)
+            split = ui_line2.split(factor=0.5)
+            split.prop(row, 'frame_start', text='Start')
+            split.prop(row, 'frame_end', text='End')
     def draw(self, context):
         layout = self.layout
         scene = context.scene
         props = context.scene.sprite_sheet_maker_props
 
 
-        # Animation Strips
+        # Import & Export Buttons
+        ui_line = layout.row(align=True)
+        ui_line.operator("spritesheetmaker.export_settings", icon='EXPORT', text="Export")
+        ui_line.operator("spritesheetmaker.import_settings", icon='IMPORT', text="Import")
+        layout.separator(factor=0.5)
+        
+
+        # Rows
         box = layout.box()
-        box.label(text="Animation Strips")
-        row = box.row()
-        row.template_list(
-            "SPRITESHEETMAKER_UL_AnimationStrips",
+        box.label(text="Rows")
+        ui_line = box.row()
+        ui_line.template_list(
+            "SSM_UL_AnimationRows",
             "",
             scene,
-            "animation_strips",
+            "animation_rows",
             scene,
-            "strip_index",
+            "row_index",
             rows=4,
             maxrows=4
         )
 
 
-        # Strips Add & Remove buttons
-        ops = row.column(align=True)
-        ops.operator("spritesheetmaker.duplicate_strip", icon='DUPLICATE', text='')
+        # Rows Add & Remove buttons
+        ops = ui_line.column(align=True)
+        ops.operator("spritesheetmaker.duplicate_row", icon='DUPLICATE', text='')
         ops.separator()
-        ops.operator('spritesheetmaker.add_strip', icon='ADD', text='')
-        ops.operator('spritesheetmaker.remove_strip', icon='REMOVE', text='')
+        ops.operator('spritesheetmaker.add_row', icon='ADD', text='')
+        ops.operator('spritesheetmaker.remove_row', icon='REMOVE', text='')
 
 
-        # Strips Up & Down buttons
+        # Rows Up & Down buttons
         ops.separator()
-        ops.operator('spritesheetmaker.move_strip', icon='TRIA_UP', text="").direction = 'UP'
-        ops.operator('spritesheetmaker.move_strip', icon='TRIA_DOWN', text="").direction = 'DOWN'
+        ops.operator('spritesheetmaker.move_row', icon='TRIA_UP', text="").direction = 'UP'
+        ops.operator('spritesheetmaker.move_row', icon='TRIA_DOWN', text="").direction = 'DOWN'
 
 
-        # Strip Info
-        row_box = layout.box()
-        has_strip = len(scene.animation_strips) > 0 and 0 <= scene.strip_index < len(scene.animation_strips)
-        row_box.enabled = has_strip
-        row_box.label(text=f"Strip Info{'' if has_strip else ' (Add Strip First)'}")
-
-        if has_strip:
-
-            # Label
-            strip = scene.animation_strips[scene.strip_index]
-            split = row_box.split(factor=0.25)
-            split.label(text="Label")
-            split.prop(strip, 'label', text='')
-
-            # Capture Items
-            row_box.label(text="Capture Items")
-            row_layout = row_box.row()
-            row_layout.template_list('SPRITESHEETMAKER_UL_CaptureItems', '', strip, 'capture_items', strip, 'capture_item_index', rows=3, maxrows=3)
-            col = row_layout.column(align=True)
-            col.operator('spritesheetmaker.add_capture_item', icon='ADD', text='')
-            col.operator('spritesheetmaker.remove_capture_item', icon='REMOVE', text='')
-
-            # Manual Frames
-            row_box.prop(strip, "manual_frames")
-
-            # Frame Start & End
-            if strip.manual_frames:
-                row2 = row_box.row(align=True)
-                split = row2.split(factor=0.5)
-                split.prop(strip, 'frame_start', text='Frame Start')
-                split.prop(strip, 'frame_end', text='Frame End')
-        else:
-
-            # Dummy Stuff
-            split = row_box.split(factor=0.25)
-            split.label(text="Label")
-            split.prop(scene, 'dummy_label', text='')
-            row_box.label(text="Capture Items")
-            row_layout = row_box.row()
-            row_layout.template_list('SPRITESHEETMAKER_UL_CaptureItems', '', scene, 'dummy_items', scene, 'dummy_index', rows=3, maxrows=3)
-            col = row_layout.column(align=True)
-            col.operator('spritesheetmaker.add_capture_item', icon='ADD', text='')
-            col.operator('spritesheetmaker.remove_capture_item', icon='REMOVE', text='')
-            row_box.prop(scene, "dummy_manual_frames")
-
-
-        # Camera Settings (Collapsible)
+        # Row Info
+        has_row = len(scene.animation_rows) > 0 and 0 <= scene.row_index < len(scene.animation_rows)
         box = layout.box()
-        box.prop(props, "show_camera_settings", icon="TRIA_DOWN" if props.show_camera_settings else "TRIA_RIGHT", emboss=False, text="Camera Settings")
-        if props.show_camera_settings:
-            row = box.row()
-            row.separator(factor=0.05)
-
-            # Custom Camera
-            split = row.split(factor=0.55)
-            split.label(text="Custom Camera")
-            split.prop(props, "custom_camera", text="")
-            
-            # To Auto Capture
-            box.prop(props, "to_auto_capture")
-            if props.to_auto_capture:
-                row = box.row()
-                row.separator(factor=0.05)
-
-                # Camera Direction
-                split = row.split(factor=0.60)
-                split.label(text="Camera Direction")
-                split.prop(props, "camera_direction", text="")
-
-                # Pixels Per Meter 
-                box.prop(props, "pixels_per_meter", text="Pixels Per Meter")
-
-                # Camera Padding 
-                box.prop(props, "camera_padding", text="Camera Padding")
-
-                # Consider Armature Bones
-                box.prop(props, "consider_armature_bones", text="Consider Armature Bones")
-
-                # Create Auto Camera Button
-                box.separator(factor=0.25)
-                row = box.row()
-                button_text = "Create Auto Camera" if props.custom_camera == None else "Modify Custom Camera"
-                row.operator("spritesheetmaker.create_auto_camera", text=button_text, icon="OUTLINER_OB_CAMERA")
-                
-
-        # Pixelation Settings (Collapsible)
-        box = layout.box()
-        box.prop(props, "show_pixelation_settings", icon="TRIA_DOWN" if props.show_pixelation_settings else "TRIA_RIGHT", emboss=False, text="Pixelation Settings")
-        if props.show_pixelation_settings:
-
-            # To Pixelate
-            box.prop(props, "to_pixelate")
-            if props.to_pixelate:
-
-                # Pixelation
-                box.prop(props, "pixelation_amount", text="Pixelation")
-
-                # Color Amount
-                box.prop(props, "color_amount", text="Color Amount")
-
-                # Min Alpha
-                box.prop(props, "min_alpha", text="Min Alpha")
-
-                # Alpha Step
-                box.prop(props, "alpha_step", text="Alpha Step")
-
-                # Test Image
-                row = box.row()
-                split = row.split(factor=0.45)
-                split.label(text="Test Image")
-                split.prop(props, "pixelate_image_path", text="")
-
-                # Pixelate Test Image Button
-                box.separator(factor=0.25)
-                row = box.row()
-                row.operator("spritesheetmaker.pixelate_image", text="Pixelate Test Image", icon="MOD_REMESH")
+        box.prop(props, "show_row_info", icon="TRIA_DOWN" if props.show_row_info else "TRIA_RIGHT", emboss=False, text=f"Row Info{'' if has_row else ' (Add atleast one row)'}")
+        if(props.show_row_info):
+            box.enabled = has_row
+            if has_row:
+                self.draw_row_info(context, scene, box)
 
 
         # Output Settings (Collapsible)
@@ -737,13 +1187,25 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
             # Label Font Size
             box.prop(props, "label_font_size", text="Label Font Size")
 
+            # Label Color
+            ui_line = box.row()
+            split = ui_line.split(factor=0.45)
+            split.label(text="Label Color")
+            split.prop(props, "label_color", text="")
+
+            # Background Color
+            ui_line = box.row()
+            split = ui_line.split(factor=0.45)
+            split.label(text="Background Color")
+            split.prop(props, "background_color", text="")
+
             # Surrounding Margins
             box.label(text="Surrounding Margins")
-            row = box.row(align=True)  # Create a row layout
-            row.prop(props, "surrounding_margin_top", text="Top")
-            row.prop(props, "surrounding_margin_right", text="Right")
-            row.prop(props, "surrounding_margin_bottom", text="Bottom")
-            row.prop(props, "surrounding_margin_left", text="Left")
+            ui_line = box.row(align=True)  # Create a row layout
+            ui_line.prop(props, "surrounding_margin_top", text="Top")
+            ui_line.prop(props, "surrounding_margin_right", text="Right")
+            ui_line.prop(props, "surrounding_margin_bottom", text="Bottom")
+            ui_line.prop(props, "surrounding_margin_left", text="Left")
 
             # Label Margin
             box.prop(props, "label_margin", text="Label Margin")
@@ -752,65 +1214,68 @@ class SPRITESHEETMAKER_PT_MainPanel(Panel):
             box.prop(props, "image_margin", text="Image Margin")
             
             # Sprite Consistency
-            row = box.row()
-            split = row.split(factor=0.60)
+            ui_line = box.row()
+            split = ui_line.split(factor=0.60)
             split.label(text="Sprite Consistency")
             split.prop(props, "sprite_consistency", text="")
 
             # Sprite Align
-            row = box.row()
-            split = row.split(factor=0.60)
+            ui_line = box.row()
+            split = ui_line.split(factor=0.60)
             split.label(text="Sprite Align")
             split.prop(props, "sprite_align", text="")
 
             # Combine Mode
-            row = box.row()
-            split = row.split(factor=0.60)
+            ui_line = box.row()
+            split = ui_line.split(factor=0.60)
             split.label(text="Combine Mode")
             split.prop(props, "combine_mode", text="")
 
             # Delete Temp Folder
             box.prop(props, "delete_temp_folder", text="Delete Temp Folder")
         
+            # Temp Folder
+            ui_line = box.row()
+            split = ui_line.split(factor=0.45)
+            split.label(text="Temp Folder")
+            split.prop(props, "temp_folder", text="")
+
+            # Combine Sprites Button
+            ui_line = box.row()
+            ui_line.operator("spritesheetmaker.combine_sprites", text="Combine Sprites", icon="TEXTURE")
+
 
         # Output folder
         layout.separator(factor=0.5)
-        row = layout.row()
-        split = row.split(factor=0.45)
+        ui_line = layout.row()
+        split = ui_line.split(factor=0.45)
         split.label(text="Output Folder")
         split.prop(props, "output_folder", text="")
 
 
-        # Combine Sprites Button
-        layout.separator(factor=0.75)
-        row = layout.row()
-        row.scale_y = 1.5
-        row.operator("spritesheetmaker.combine_sprites", text="Combine Sprites", icon="TEXTURE")
-
-
         # Create Single Sprite Button
         layout.separator(factor=0.25)
-        row = layout.row()
-        row.scale_y = 1.5
-        row.operator("spritesheetmaker.create_single", text="Create Single Sprite", icon="FILE_IMAGE")
+        ui_line = layout.row()
+        ui_line.scale_y = 1.5
+        ui_line.operator("spritesheetmaker.create_single", text="Create Single Sprite", icon="FILE_IMAGE")
 
 
         # Create Sprite Sheet Button
         if props.combine_mode == CombineMode.SHEET.value:
             create_btn_text = "Create Sprite Sheet"
         elif props.combine_mode == CombineMode.STRIPS.value:
-            create_btn_text = "Create Sprite Strips"
+            create_btn_text = "Create Sprite Rows"
         else:
             create_btn_text = "Create Sprite Images"
 
         layout.separator(factor=0.25)
-        row = layout.row()
-        row.scale_y = 1.5
-        row.operator("spritesheetmaker.create_sheet", text=create_btn_text, icon="RENDER_ANIMATION")
+        ui_line = layout.row()
+        ui_line.scale_y = 1.5
+        ui_line.operator("spritesheetmaker.create_sheet", text=create_btn_text, icon="RENDER_ANIMATION")
 
 
 # Param Methods
-def assemble_param_from_props():
+def gen_assemble_param():
 
     # Get all props
     props = bpy.context.scene.sprite_sheet_maker_props
@@ -818,232 +1283,220 @@ def assemble_param_from_props():
 
     # Set assemble parameters
     param = AssembleParam()
-    param.input_folder_path = props.output_folder
+    for prop in param.__dict__:
+        if hasattr(props, prop) and prop not in ["surrounding_margin", "consistency", "align", "combine_mode", "label_color", "background_color"]:
+            setattr(param, prop, getattr(props, prop))
+    
 
-    if(props.combine_mode == CombineMode.SHEET.value):
-        param.output_path = get_sprite_sheet_path()
-    elif(props.combine_mode == CombineMode.STRIPS.value):
-        param.output_path = get_sprite_strips_path()
-    elif(props.combine_mode == CombineMode.IMAGES.value):
-        param.output_path = get_sprite_images_path()
-
-    param.font_size = props.label_font_size
+    # Manual overrides for Enums and Tuples
     param.surrounding_margin = (props.surrounding_margin_top, props.surrounding_margin_right, props.surrounding_margin_bottom, props.surrounding_margin_left)
-    param.label_margin = props.label_margin
-    param.image_margin = props.image_margin
     param.consistency = SpriteConsistency(props.sprite_consistency)
     param.align = SpriteAlign(props.sprite_align)
     param.combine_mode = CombineMode(props.combine_mode)
+    param.font_size = props.label_font_size
+    param.label_color = tuple(props.label_color)
+    param.background_color = tuple(props.background_color)
+
 
     return param
+def gen_auto_capture_param(row):
 
-def auto_capture_param_from_props():
-
-    # Get all props & scene
-    props = bpy.context.scene.sprite_sheet_maker_props
-    scene = bpy.context.scene
-
-
-    # Set auto capture parameters
     param = AutoCaptureParam()
-    param.objects = get_objects_to_capture()
-    param.consider_armature_bones = props.consider_armature_bones
-    param.camera_direction = CameraDirection(props.camera_direction)
-    param.pixels_per_meter = props.pixels_per_meter
-    param.camera_padding = props.camera_padding
+    param.objects = get_objects_to_capture(row)
+    
+
+    # Auto copy matching properties
+    for prop in param.__dict__:
+        if hasattr(row, prop) and prop not in ["objects", "camera_direction"]:
+            setattr(param, prop, getattr(row, prop))
+            
+
+    # Manual override for Enum
+    param.camera_direction = CameraDirection(row.camera_direction)
 
 
     return param
+def gen_pixelate_param(row):
 
-def pixelate_param_from_props():
-
-    # Get all props
-    props = bpy.context.scene.sprite_sheet_maker_props
-
-
-    # Set pixelation parameters
     param = PixelateParam()
-    param.pixelation_amount = props.pixelation_amount
-    param.color_amount = props.color_amount
-    param.min_alpha = props.min_alpha
-    param.alpha_step = props.alpha_step
+    
+
+    # Auto copy all matching properties
+    for prop in param.__dict__:
+        if hasattr(row, prop):
+            setattr(param, prop, getattr(row, prop))
 
 
     return param
+def gen_row_param(row):
+    row_param = RowParam()
+    row_param.capture_items = [(capture_item.object, capture_item.action, capture_item.slot) for capture_item in row.capture_items]
+    
 
-def sprite_param_from_props():
-
-    # Get all props
-    props = bpy.context.scene.sprite_sheet_maker_props
-
-
-    # Set sprite parameters
-    param = SpriteParam()
-    param.output_file_path = get_sprite_path()
-    param.camera = props.custom_camera
+    # Auto copy row properties
+    for prop in row_param.__dict__:
+        if hasattr(row, prop) and prop not in ["capture_items"]:
+            setattr(row_param, prop, getattr(row, prop))
 
 
-    # Set Auto capture
-    param.to_auto_capture = props.to_auto_capture
-    if props.to_auto_capture:
-        param.auto_capture_param = auto_capture_param_from_props()
+    # Assign sub params
+    row_param.auto_capture_param = gen_auto_capture_param(row) if row.to_auto_capture else AutoCaptureParam()
+    row_param.pixelate_param = gen_pixelate_param(row) if row.to_pixelate else PixelateParam()
 
-
-    # Set Pixelation    
-    param.to_pixelate = props.to_pixelate
-    if(param.to_pixelate):
-        param.pixelate_param = pixelate_param_from_props()
-
-
-    return param
-
-def sprite_sheet_param_from_props():
+    return row_param
+def gen_sprite_sheet_param():
 
     # Get all props & scene
     props = bpy.context.scene.sprite_sheet_maker_props
     scene = bpy.context.scene
-
-
-    # Iterate and get all strips
-    animation_strips:list[StripParam] = []
-    for strip_item in scene.animation_strips:
-        strip_param = StripParam()
-        strip_param.label = strip_item.label
-        strip_param.capture_items = [(capture_item.object, capture_item.action, capture_item.slot) for capture_item in strip_item.capture_items]
-        strip_param.manual_frames = strip_item.manual_frames
-        strip_param.frame_start = strip_item.frame_start
-        strip_param.frame_end = strip_item.frame_end
-        animation_strips.append(strip_param)
-
-
-    # Set sheet parameters
     param = SpriteSheetParam()
-    param.animation_strips = animation_strips
-    param.temp_folder_path = props.output_folder
-    param.delete_temp_folder = props.delete_temp_folder
 
 
-    # Set sprite parameters
-    param.sprite_param = sprite_param_from_props()
+    # Auto copy top level matching properties
+    for prop in param.__dict__:
+        if hasattr(props, prop):
+            setattr(param, prop, getattr(props, prop))
 
 
-    # Set assemble parameters
-    param.assemble_param = assemble_param_from_props()
+    # Assign rows
+    param.animation_rows = []
+    for row in scene.animation_rows:
+        row_param = gen_row_param(row)
+        param.animation_rows.append(row_param)
+
+
+    # Assign Assemble param
+    param.assemble_param = gen_assemble_param()
 
 
     return param
 
 
 # Helper Methods
+def is_valid(obj, check_for_none = True):
+
+    # Check if the variable is None
+    if check_for_none and obj is None:
+        return False
+        
+    # Check if the object was structurally deleted (dead pointer)
+    try:
+        obj_name = obj.name
+    except ReferenceError:
+        return False
+        
+    # Check if it is actively linked to the current scene's view layer
+    return obj_name in bpy.context.view_layer.objects
+def get_current_row():
+    scene = bpy.context.scene
+    rows = scene.animation_rows
+    if(len(rows) == 0):
+        return None
+
+    idx = scene.row_index
+    return rows[idx]
+def get_row_label(row):
+    return row.label if row.label!='' else UNTITLED_ROW_NAME
 def get_label_text():
 
-    # Get the label text of the first strip 
+    # Get the label text of the first row 
     scene = bpy.context.scene
-    for strip_item in scene.animation_strips:
-        if(strip_item.label == ""):
+    for row in scene.animation_rows:
+        if(row.label == ""):
             continue
     
-        return strip_item.label
+        return row.label
     
     return UNTITLED_LABEL_TEXT
-
 def get_pixelated_img_path():
 
     # Get all props
-    props = bpy.context.scene.sprite_sheet_maker_props
+    curr_row = get_current_row()
     file_ext = bpy.context.scene.render.image_settings.file_format.lower()
 
 
     # Add postfix to the file name
-    dir_name, file_name = os.path.split(props.pixelate_image_path)
+    dir_name, file_name = os.path.split(curr_row.pixelate_image_path)
     name, ext = os.path.splitext(file_name)
     pixelated_output_path = os.path.join(dir_name, f"{name}_{PIXELATE_TEST_IMAGE_POSTFIX}.{file_ext}")
     
 
     return unique_path(pixelated_output_path)
-
-def get_sprite_sheet_path():
-
-    # Get initial path
+def get_sprite_sheet_path(mode, single_sprite = False):
     props = bpy.context.scene.sprite_sheet_maker_props
     file_ext = bpy.context.scene.render.image_settings.file_format.lower()
-    sprite_sheet_path = unique_path(f"{props.output_folder}/{SPRITE_SHEET_NAME}.{file_ext}")
+
+    # Assign file/folder name
+    if(single_sprite):
+        base_name = f"{SINGLE_SPRITE_NAME}.{file_ext}"
+    else:
+        base_name = f"{SPRITE_SHEET_NAME}.{file_ext}" if mode == CombineMode.SHEET.value else DEFAULT_OUTPUT_FOLDER_NAME
+
+
+    # Get full path
+    sprite_sheet_path = unique_path(f"{props.output_folder}/{base_name}")
 
 
     return sprite_sheet_path
+def get_objects_to_capture(row):
 
-def get_sprite_strips_path():
-    
-    # Get initial path
-    props = bpy.context.scene.sprite_sheet_maker_props
-    file_ext = bpy.context.scene.render.image_settings.file_format.lower()
-    sprite_sheet_path = unique_path(f"{props.output_folder}/{DEFAULT_OUTPUT_FOLDER_NAME}")
-
-
-    return sprite_sheet_path
-
-def get_sprite_images_path():
-
-    # Get initial path
-    props = bpy.context.scene.sprite_sheet_maker_props
-    file_ext = bpy.context.scene.render.image_settings.file_format.lower()
-    sprite_sheet_path = unique_path(f"{props.output_folder}/{DEFAULT_OUTPUT_FOLDER_NAME}")
-
-
-    return sprite_sheet_path
-
-def get_sprite_path():
-
-    # Get initial path
-    props = bpy.context.scene.sprite_sheet_maker_props
-    file_ext = bpy.context.scene.render.image_settings.file_format.lower()
-    sprite_path = unique_path(f"{props.output_folder}/{SINGLE_SPRITE_NAME}.{file_ext}")
-
-
-    return sprite_path
-
-def get_objects_to_capture():
-
-    # Get scene
-    scene = bpy.context.scene
-
-
-    # Get objects in strip
+    # Get objects in row
     objects = set()
-    for strip in scene.animation_strips:
-        for item in strip.capture_items:
-            if(item.object is None):
-                continue
-            
-            objects.add(item.object)
+    for item in row.capture_items:
+
+        # Skip if invalid object or if not to consider armature
+        if(not is_valid(item.object) or (item.object.type == 'ARMATURE' and not row.consider_armature_bones)):
+            continue
+        
+        objects.add(item.object)
 
 
     return objects
+def get_synced_row():
+    scene = bpy.context.scene
+    rows = scene.animation_rows
 
-def popup(message, icon="INFO"):
-    bpy.ops.spritesheetmaker.message_popup('INVOKE_DEFAULT', **{ "message_heading": message,  "message_icon" : icon })
+    for i, row in enumerate(rows):
+        if(row.in_sync):
+            return i, row
+
+    return -1, None
+def are_any_in_sync():
+    scene = bpy.context.scene
+    rows = scene.animation_rows
+
+    for row in rows:
+        if(row.in_sync):
+            return True
+
+    return False
 
 
 # Initialize Classes
 classes = (
-    SpriteSheetMakerMessagePopup,
-    SpriteSheetMakerProperties,
-    SpriteSheetMakerCaptureItem,
-    SpriteSheetMakerStripInfo,
-    SPRITESHEETMAKER_UL_AnimationStrips,
-    SPRITESHEETMAKER_UL_CaptureItems,
-    SPRITESHEETMAKER_OT_duplicate_strip,
-    SPRITESHEETMAKER_OT_add_strip,
-    SPRITESHEETMAKER_OT_remove_strip,
-    SPRITESHEETMAKER_OT_move_strip,
-    SPRITESHEETMAKER_OT_add_capture_item,
-    SPRITESHEETMAKER_OT_remove_capture_item,
-    SPRITESHEETMAKER_OT_CreateAutoCamera,
-    SPRITESHEETMAKER_OT_PixelateImage,
-    SPRITESHEETMAKER_OT_CombineSprites,
-    SPRITESHEETMAKER_OT_CreateSingleSprite,
-    SPRITESHEETMAKER_OT_CreateSheet,
-    SPRITESHEETMAKER_PT_MainPanel,
+    SSM_MessagePopup,
+    SSM_Properties,
+    SSM_CaptureItem,
+    SSM_RowInfo,
+    SSM_OT_KeyListener,
+    SSM_OT_ImportSettings,
+    SSM_OT_ExportSettings,
+    SSM_UL_AnimationRows,
+    SSM_UL_CaptureItems,
+    SSM_OT_DuplicateRow,
+    SSM_OT_AddRow,
+    SSM_OT_RemoveRow,
+    SSM_OT_MoveRow,
+    SSM_OT_PlayCaptureItems,
+    SSM_OT_AddCaptureItem,
+    SSM_OT_RemoveCaptureItem,
+    SSM_OT_SyncRow,
+    SSM_OT_CreateAutoCamera,
+    SSM_OT_PixelateImage,
+    SSM_OT_CombineSprites,
+    SSM_OT_CreateSingleSprite,
+    SSM_OT_CreateSheet,
+    SSM_PT_MainPanel,
 )
 
 
@@ -1052,32 +1505,30 @@ def register():
     for cls in classes:
         bpy.utils.register_class(cls)
     
-    bpy.types.Scene.sprite_sheet_maker_props = PointerProperty(type=SpriteSheetMakerProperties)
+    
+    Scene.sprite_sheet_maker_props = PointerProperty(type=SSM_Properties)
+    Scene.animation_rows = CollectionProperty(type=SSM_RowInfo)
+    Scene.row_index = IntProperty(default=0)
 
-    bpy.types.Scene.animation_strips = CollectionProperty(type=SpriteSheetMakerStripInfo)
-    bpy.types.Scene.strip_index = IntProperty(default=0)
 
-    bpy.types.Scene.dummy_label = StringProperty(name='Dummy Label', default='')
-    bpy.types.Scene.dummy_items = CollectionProperty(type=SpriteSheetMakerCaptureItem)
-    bpy.types.Scene.dummy_index = IntProperty(default=0)
-    bpy.types.Scene.dummy_manual_frames = BoolProperty(name="Manual Frame Selection", default=False)
-    bpy.types.Scene.dummy_start = IntProperty(name='Dummy Start', default=0, min=-1048574, max=1048574)
-    bpy.types.Scene.dummy_end = IntProperty(name='Dummy End', default=250, min=-1048574, max=1048574)
-
+    # Start listening for "Alt" key
+    def run_auto_listener():
+        if hasattr(bpy.ops, "spritesheetmaker"):
+            bpy.ops.spritesheetmaker.key_listener('INVOKE_DEFAULT')
+        else:
+            log("Failed to listen for Alt Key!")
+        return None
+    bpy.app.timers.register(run_auto_listener, first_interval=0.5) 
 def unregister():
     for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except RuntimeError:
+            pass
 
-    del bpy.types.Scene.sprite_sheet_maker_props
-
-    del bpy.types.Scene.animation_strips
-    del bpy.types.Scene.strip_index
-    del bpy.types.Scene.dummy_label
-    del bpy.types.Scene.dummy_items
-    del bpy.types.Scene.dummy_index
-    del bpy.types.Scene.dummy_manual_frames
-    del bpy.types.Scene.dummy_start
-    del bpy.types.Scene.dummy_end
+    del Scene.sprite_sheet_maker_props
+    del Scene.animation_rows
+    del Scene.row_index
 
 
 if __name__ == "__main__":
