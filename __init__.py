@@ -893,7 +893,7 @@ class SSM_OT_CreateSheet(Operator):
 
 
     @staticmethod
-    def check_strip(strip, check_actions = True):
+    def check_strip(strip):
 
         # Return if empty capture items
         objects = get_objects_to_capture(strip)

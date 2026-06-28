@@ -77,7 +77,7 @@ def flip_image(image_path:str, flip_h:bool, flip_v:bool):
     img.save(image_path)
 def unique_path(target_path:str, count_limit:int = 100000):
 
-    # Return if path already exists
+    # Return if path already doesn't exists
     if not os.path.exists(target_path):
         return target_path
 
@@ -311,7 +311,7 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
     
         # Assign strip height & width
         strip_width = surrounding_margin_left + max(row_width, row_data.label_width) + surrounding_margin_right
-        strip_height = surrounding_margin_top + row_data.label_height + label_margin + img_height + surrounding_margin_bottom
+        strip_height = surrounding_margin_top + ((row_data.label_height + label_margin) if font_size != 0 else 0) + img_height + surrounding_margin_bottom
 
 
         # Create strip

@@ -8,6 +8,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 ![banner](images/banner.png)
 
 
+
 ## 🪄 Features
 1. Highly customizable
 1. Inbuilt auto camera
@@ -24,6 +25,20 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 > If you want to reuse the core functionality without the UI in your own code base look inside the `modules/` folder.  
 >
 > _If you use these in your own project, attribution is appreciated! Also feel free to leave a ⭐_
+
+
+
+## 🌟 Showcase
+<details>
+<summary>View Images</summary>
+
+![panel 1](images/panel_1.png)  
+![panel 2](images/panel_2.png)  
+![panel 3](images/panel_3.png)  
+![panel 4](images/panel_4.png)  
+![panel 5](images/panel_5.png)  
+
+</details>
 
 
 
