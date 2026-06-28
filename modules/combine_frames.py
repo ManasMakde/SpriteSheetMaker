@@ -48,7 +48,7 @@ class AssembleParam:
         self.font_size:int = 24
         self.label_color:tuple = (1.0, 1.0, 1.0, 1.0)  # RGBA normalized 0 to 1
         self.background_color:tuple = (0.0, 0.0, 0.0, 0.0)  # RGBA normalized 0 to 1
-        self.surrounding_margin:int = (15, 15, 15, 15)  # top, right, bottom, left
+        self.surrounding_margin:tuple[int, int, int, int] = (15, 15, 15, 15)  # top, right, bottom, left
         self.label_margin:int = 15
         self.image_margin:int = 15
         self.consistency:SpriteConsistency = SpriteConsistency.INDIVIDUAL
@@ -374,7 +374,7 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
     create_folder(output_path)
 
 
-    # Iterate and create strips
+    # Iterate and create images
     for row_count, row_data in enumerate(rows):
 
         # Create row folder
@@ -417,7 +417,7 @@ def combine_into_images(param:AssembleParam, rows:list[RowData], global_img_wide
             img_output_path = os.path.join(row_folder, f"{img_count}.{ext.lower()}")
             log(f"Saving image to '{img_output_path}' ...")
             new_img.save(img_output_path)
-            log(f"Successfully saved sprite strip to {img_output_path}")
+            log(f"Successfully saved sprite image to {img_output_path}")
 def assemble_images(param:AssembleParam, input_folder_path:str, output_path:str):
 
     # Load font and Get all sorted action sub folders

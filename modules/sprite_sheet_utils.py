@@ -71,7 +71,7 @@ class PixelateParam:
         self.color_amount:float = 50.0
         self.min_alpha:float = 0.0
         self.alpha_step:float = 0.25  # Ensures alpha of color is rounded down to the nearest multiple of "step" (helps reducing gradients)
-class StripParam:
+class RowParam:
     def __init__(self):
         self.label:str = ""
         self.capture_items = []  # [(Object, Action, Slot), ... ]
@@ -91,7 +91,7 @@ class StripParam:
         self.frame_end:int = 250
 class SpriteSheetParam:
     def __init__(self):
-        self.animation_strips:list[StripParam] = []
+        self.animation_rows:list[RowParam] = []
         self.assemble_param:AssembleParam = AssembleParam()
         self.delete_temp_folder:bool = True
 
@@ -687,12 +687,12 @@ def delete_auto_camera():
     cam_obj = bpy.data.objects.get(AUTO_CAMERA_NAME)
     if cam_obj is not None:
         bpy.data.objects.remove(cam_obj, do_unlink=True) 
-def assign_objects_visibility(animation_strips):
+def assign_objects_visibility(animation_rows):
 
-    # Collect every object referenced across all strips capture items
+    # Collect every object referenced across all rows capture items
     capture_objects = set()
-    for strip in animation_strips:
-        for (obj, action, slot) in strip.capture_items:
+    for row in animation_rows:
+        for (obj, action, slot) in row.capture_items:
             if obj is not None:
                 capture_objects.add(obj)
 
@@ -771,7 +771,6 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
         blend_file_path = os.path.join(current_dir, SPRITE_SHEET_MAKER_BLEND_FILE)
         if not os.path.exists(blend_file_path):
             raise Exception(f"Blend file for importing pixelate scene not found: {blend_file_path}")
-            return
 
 
         # Import pixelate scene
@@ -781,14 +780,12 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
                 data_to.scenes = [PIXELATE_SCENE_NAME]
             else:  # If scene not found
                 raise Exception(f"scene '{PIXELATE_SCENE_NAME}' not found in {blend_file_path}")
-                return
 
 
         # return If still no pixelate scene exists 
         pixelate_scene = data_to.scenes[0]
         if not pixelate_scene:
             raise Exception(f"scene '{PIXELATE_SCENE_NAME}' is invalid!")
-            return
     
     
     # Save old scene
@@ -897,10 +894,10 @@ class SpriteSheetMaker():
     def __init__(self):
         self.on_sprite_creating = Event()  # param
         self.on_sprite_created = Event()   # param
-        self.on_sheet_row_creating = Event()  # strip_label, total_frames
-        self.on_sheet_row_created = Event()  # strip_label, total_frames
-        self.on_sheet_frame_creating = Event()  # strip_label, frame
-        self.on_sheet_frame_created = Event()   # strip_label, frame
+        self.on_sheet_row_creating = Event()  # row_label, total_frames
+        self.on_sheet_row_created = Event()  # row_label, total_frames
+        self.on_sheet_frame_creating = Event()  # row_label, frame
+        self.on_sheet_frame_created = Event()   # row_label, frame
     def create_sprite(self, camera, output_path):
         
         # Setup Camera
@@ -925,16 +922,16 @@ class SpriteSheetMaker():
     def create_sprite_sheet_impl(self, param:SpriteSheetParam, temp_dir:str):
 
         # Iterate through actions and capture render for each frame (Each action should have it's own folder (in order) & image names should be 1, 2, 3 for each frame respectively)
-        for i, strip in enumerate(param.animation_strips):
+        for i, row in enumerate(param.animation_rows):
 
             # Calculate frame range
             frame_start = float('inf')
             frame_end = float('-inf')
-            if(strip.manual_frames):
-                frame_start = strip.frame_start
-                frame_end = strip.frame_end
+            if(row.manual_frames):
+                frame_start = row.frame_start
+                frame_end = row.frame_end
             else:
-                for item in strip.capture_items:
+                for item in row.capture_items:
                     obj, action, slot = item
                     if(action != None):
                         frame_start = min(frame_start, action.frame_range[0])
@@ -944,11 +941,11 @@ class SpriteSheetMaker():
 
 
             # Notify starting row creation
-            self.on_sheet_row_creating.broadcast(strip.label, frame_end)
+            self.on_sheet_row_creating.broadcast(row.label, frame_end)
 
 
-            # Create folder for this strip
-            clean_label = bpy.path.clean_name(strip.label.strip())
+            # Create folder for this row
+            clean_label = bpy.path.clean_name(row.label.strip())
             folder_name = f"{i}_{clean_label if clean_label !='' else UNTITLED_FOLDER_NAME}"
             log(f"Creating folder {folder_name}")
             action_dir = create_folder(temp_dir, folder_name)
@@ -956,7 +953,7 @@ class SpriteSheetMaker():
 
             # Assign action to all objects
             old_anim_data = []  # [(obj, old_action, old_slot), ...]
-            for (obj, action, slot) in strip.capture_items:
+            for (obj, action, slot) in row.capture_items:
 
                 # Skip if object is invalid or no Action provided or doesn't have attributes
                 if obj == None or not hasattr(obj, "animation_data") or not hasattr(obj.animation_data, "action") or not hasattr(obj.animation_data, "action_slot"):
@@ -977,11 +974,11 @@ class SpriteSheetMaker():
 
 
             # Create auto camera
-            camera = create_auto_camera(strip.auto_capture_param) if not strip.custom_camera else strip.custom_camera
+            camera = create_auto_camera(row.auto_capture_param) if not row.custom_camera else row.custom_camera
 
 
-            # Hide all non capture items and show all capture items of this strip
-            strip_original_visibility = assign_objects_visibility([strip])
+            # Hide all non capture items and show all capture items of this row
+            row_original_visibility = assign_objects_visibility([row])
 
 
             # Iterate through all frames & render sprite frame
@@ -989,37 +986,37 @@ class SpriteSheetMaker():
             for frame in range(frame_start, frame_end + 1):
 
                 # Notify starting
-                log(f"Capturing strip '{strip.label}' at frame {frame}")
-                self.on_sheet_frame_creating.broadcast(strip.label, frame)
+                log(f"Capturing row '{row.label}' at frame {frame}")
+                self.on_sheet_frame_creating.broadcast(row.label, frame)
 
                 # Set frame
                 bpy.context.scene.frame_set(frame)
 
                 # Fit auto camera to view
-                if(strip.to_auto_capture):
-                    setup_auto_camera(camera, strip.auto_capture_param)
+                if(row.to_auto_capture):
+                    setup_auto_camera(camera, row.auto_capture_param)
 
                 # Render sprite
                 sprite_output_file = f"{action_dir}/{frame}.{bpy.context.scene.render.image_settings.file_format.lower()}"
                 self.create_sprite(camera, sprite_output_file)
 
                 # Flip sprite horizontally or vertically
-                if(strip.to_flip_h or strip.to_flip_v):
-                    flip_image(sprite_output_file, strip.to_flip_h, strip.to_flip_v)
+                if(row.to_flip_h or row.to_flip_v):
+                    flip_image(sprite_output_file, row.to_flip_h, row.to_flip_v)
                 
                 # Store path to pixelate
                 pixelate_dict[sprite_output_file] = None
 
                 # Notify frame completed
-                self.on_sheet_frame_created.broadcast(strip.label, frame)
+                self.on_sheet_frame_created.broadcast(row.label, frame)
 
 
-            # Reset original visibility of this strip's objects
-            restore_object_visibility(strip_original_visibility)
+            # Reset original visibility of this row's objects
+            restore_object_visibility(row_original_visibility)
 
 
             # Delete auto camera
-            if(not strip.custom_camera and camera is not None):
+            if(not row.custom_camera and camera is not None):
                 bpy.data.objects.remove(camera, do_unlink=True) 
             
 
@@ -1031,16 +1028,16 @@ class SpriteSheetMaker():
             
             
             # pixelate if required
-            if(strip.to_pixelate):
-                pixelate_images(pixelate_dict, strip.pixelate_param)
+            if(row.to_pixelate):
+                pixelate_images(pixelate_dict, row.pixelate_param)
 
 
             # Notify completed row creation
-            self.on_sheet_row_created.broadcast(strip.label, frame_end)
+            self.on_sheet_row_created.broadcast(row.label, frame_end)
     def create_sprite_sheet(self, param:SpriteSheetParam, output_path:str):
         
         # Hide all non capture items and show all capture items
-        original_visibility = assign_objects_visibility(param.animation_strips)
+        original_visibility = assign_objects_visibility(param.animation_rows)
 
 
         # Intentionally kept inside try so that visibility is restored even incase of failure
@@ -1062,12 +1059,17 @@ class SpriteSheetMaker():
             # Delete temp folder
             if param.delete_temp_folder:
                 shutil.rmtree(temp_dir)
+        
+            # Reset original visibility of all objects
+            restore_object_visibility(original_visibility)
+
         except Exception as e:
+
+            # Reset original visibility of all objects
+            restore_object_visibility(original_visibility)
             log(f"Failed while capturing sprite sheet frames: {e} \n {traceback.format_exc()}")
-
-
-        # Reset original visibility of all objects
-        restore_object_visibility(original_visibility)
+            
+            raise e
 
 
         return True

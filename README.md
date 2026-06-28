@@ -12,7 +12,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 ## 🪄 Features
 1. Highly customizable
 1. Inbuilt auto camera
-1. Labeling for each strip
+1. Labeling for each row
 1. Allows single sprite creation
 1. In-built pixelation tool
 1. Options for combining into sheet, strips or images
@@ -46,7 +46,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 1. Download the plugin from [releases](https://github.com/ManasMakde/SpriteSheetMaker/releases/) or official [blender extension](https://extensions.blender.org/add-ons/sprite-sheet-maker/) site
 2. If installed from releases, Go to _Edit -> Preferences -> Add-ons -> Install from Disk_ and select the .zip file (make sure it's enabled once installed)
 3. If the installation was successful you should now see the panel as such:  
-   ![Sidebar screenshot](images/sidebar_screenshot.png)  
+   ![Sidebar screenshot](images/screenshots/sidebar_screenshot.png)  
 
 
 
@@ -59,14 +59,14 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 ## 🧭 Usage
 
 1. **Export/Import:**  
-   ![Export / Import Settings](images/export_import_screenshot.png)
+   ![Export / Import Settings](images/screenshots/export_import_screenshot.png)
 
    You can use these buttons to export or import your current plugin values for future reusability.  
    The values are saved as `.json` file and hence they can also be modified externally.
 
 
-1. **Animation Strips:**   
-   ![Animation Strips screenshot](images/animation_strips_screenshot.png)   
+1. **Rows:**   
+   ![Rows screenshot](images/screenshots/rows_screenshot.png)   
 
    Each one of these represent a row within a sprite sheet.  
    You can duplicate by using the <img src="images/duplicate_button.png"/> button.  
@@ -74,30 +74,30 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    You can reorder them using the arrow ▲ and ▼ buttons on the side.
 
    > **Note:**  
-   > The order of strips in this list corresponds to the order in which they appear in the sprite sheet.
+   > The order of rows in this list corresponds to the order in which they appear in the sprite sheet.
 
 
-1. **Strip Info:**  
-   ![Strip Info screenshot](images/strip_info_screenshot.png)   
+1. **Row Info:**  
+   ![Row Info screenshot](images/screenshots/row_info_screenshot.png)   
 
-   This shows the properties of whichever strip is **selected** in `Animation Strips`, If it is grayed out & disabled then it mean you have to add a strip first.
+   This shows the properties of whichever row is **selected** in `Rows`, If it is grayed out & disabled then it mean you have to add a row first.
    
-   You can preview all the actions to be rendered in this strip by pressing ▶︎ button.
+   You can preview all the actions to be rendered in this row by pressing ▶︎ button.
    
 
    - <img src="images/sync_button.png" /> **Sync Button:**   
-      If enabled (i.e. in-sync), The `Custom Camera`, `Auto Capture` & `Pixelate` Properties stay in sync with all other strips which have this button enabled.  
+      If enabled (i.e. in-sync), The `Custom Camera`, `Auto Capture` & `Pixelate` Properties stay in sync with all other rows which have this button enabled.  
       
-      If disabled, Changing properties for that strip won't effect other strips.   
+      If disabled, Changing properties for that row won't effect other rows.   
       
-      If you hold `Alt` and then click on this button, the properties of the current strip will be synced onto all the other strips that are in-sync.  
+      If you hold `Alt` and then click on this button, the properties of the current row will be synced onto all the other rows that are in-sync.  
 
    
    -  **Label:**  
-      This is the text that will be added on top of the strip in the sprite sheet.
+      This is the text that will be added on top of the row in the sprite sheet.
 
    - **Capture Items:**  
-      These are all the objects that will be captured within a single strip, Use + and - buttons on the side to add & remove items. Once an item is created it will have 3 inputs:  
+      These are all the objects that will be captured within a single row, Use + and - buttons on the side to add & remove items. Once an item is created it will have 3 inputs:  
       `Object`: This refers to the object that should be captured  
       `Action`: This refers to what action the aforementioned object should be playing  
       `Slot`: This refers to [action slot](https://www.youtube.com/watch?v=N4GlTIz66EA) to be used (leave blank if you're unsure)  
@@ -107,7 +107,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 
 
 1. **To Auto Capture**  
-   ![Auto Capture screenshot](images/auto_capture_screenshot.png)
+   ![Auto Capture screenshot](images/screenshots/auto_capture_screenshot.png)
 
    These settings will only show up when check box is enabled.  
 
@@ -120,7 +120,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
       Available options: `x`, `y`, `z`, `-x`, `-y`, `-z`, `Custom`  
       Incase `Custom` is selected 3 more inputs will show up.  
 
-      ![Custom Direction screenshot](images/custom_direction_screenshot.png)  
+      ![Custom Direction screenshot](images/screenshots/custom_direction_screenshot.png)  
       **Orbit-Z:** The orbiting z rotation around all capture items.  
       **Orbit-X:** The orbiting x rotation around all capture items.  
       **Roll:**  The [roll][Roll Wiki] rotation of the camera itself.
@@ -150,10 +150,10 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 
 
 1. **To Pixelate:**  
-   ![To Pixelate Screenshot](images/to_pixelate_screenshot.png)  
+   ![To Pixelate Screenshot](images/screenshots/to_pixelate_screenshot.png)  
 
    These settings will only show up when check box is enabled.  
-   If enabled then the sprites of this strip will be pixelated.  
+   If enabled then the sprites of this row will be pixelated.  
 
    - **Pixelation:**  
       By how much to pixelate the sprites, Higher the value the more the sprites will be pixelated.
@@ -175,9 +175,9 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 
 
 1. **Manual Frame Selection:**  
-   ![Manual Frame Selection screenshot](images/manual_frame_screenshot.png)  
+   ![Manual Frame Selection screenshot](images/screenshots/manual_frame_screenshot.png)  
 
-   If enabled, you can manually set the **Start** & **End** frames (inclusive) to capture in the strip.  
+   If enabled, you can manually set the **Start** & **End** frames (inclusive) to capture in the row.  
    If disabled, The start & end frame of longest duration action will be taken.
 
 
@@ -190,13 +190,13 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 
 
 1. **Output Settings**  
-   ![Output Settings screenshot](images/output_settings_screenshot.png)   
+   ![Output Settings screenshot](images/screenshots/output_settings_screenshot.png)   
 
    - **Label Font Size:**  
       The font size of the action name labels in sprite sheet, If you do not want labels in your sprite sheet you can set it to 0.  
 
    - **Label Color:**  
-      The color of the label on top of the strip.
+      The color of the label on top of the row.
 
    - **Background Color:**  
       The background color of the entire sprite sheet. (Can also be set to transparent)
@@ -250,7 +250,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    Folder in which the newly created sprite sheet is saved.
 
 3. **Create Single Sprite:**  
-   This renders a single sprite with all settings applied. The label for it is taken from the first `Animation Strip` item.
+   This renders a single sprite with all settings applied. The label for it is taken from the first `Rows` item.
 
 4. **Create Sprite Sheet:**  
    This creates the entire sprite sheet (or whichever `Combine Mode` is specified) at the given `Output Folder`, While creating you might see a temp folder by the name of "SpriteSheetMakerTemp" do not delete it otherwise the sheet won't be created properly. 
@@ -258,6 +258,46 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 
 
 ## 🗺️ Example
+<details>
+<summary><b>Creating your first sprite sheet</b></summary>
+
+1. Get your mesh & animations from [mixamo](https://www.mixamo.com/) or [mesh2motion](https://mesh2motion.org/).  
+   For this example we will be using `Mannequin` Mesh & `Idle Loop`, `Walk Loop`, `Puch Cross` animations from mesh2motion.  
+
+1. Import into blender and rename the mesh & armature accordingly:  
+   ![Example Mesh & Animations Screenshot](images/screenshots/example_mesh_import_screenshot.png)
+
+1. Setup your _Render Properties_, You can adjust these as needed but for this example we're using:   
+   Set _Render Engine_ to `Workbench`  
+   Set _Lighting_ to `Studio` & _Studiolight_ to `paint.sl`  
+   Set _Object Color_ to `Texture`  
+   Enable _Transparent_    
+   ![Switch to Workbench Screenshot](images/screenshots/render_settings_screenshot.png)  
+   
+1. Open the plugin and create a new row by clicking on the + button  
+   ![Add Row Screenshot](images/screenshots/add_row_screenshot.png)  
+   This now represents a single row in your sprite sheet.  
+
+1. Now in the _Row Info_ add 2 capture items by pressing on the + button  
+   Then in one of the items assign the object as the mesh  
+   Then in the other item assign the object as the armature & the action as `Idle_Loop`  
+   ![Add Capture Item Screenshot](images/screenshots/add_capture_items_screenshot.png)
+
+   > **Note:** Do not assign the action to the mesh it won't work.
+
+1. Now repeat the process and create 2 more rows each for animations `Walk_Loop` & `Punch_Cross`.  
+   ![3 Example Rows Screenshot](images/screenshots/3_example_rows_screenshot.png)
+
+1. Set the output folder (Any location is fine, For this example we'll be using Desktop)  
+   ![Output Folder Screenshot](images/screenshots/output_folder_screenshot.png)
+
+1. Click on `Create Sprite Sheet` Button & Voilà you've just created your first sprite sheet!  
+   ![Sprite Sheet Created Screenshot](images/screenshots/spritesheet_created_screenshot.png)
+
+If you followed all the steps your sprite sheet should look something like this:
+![First Sprite Sheet Screenshot](images/screenshots/first_sprite_sheet_screenshot.png)
+
+</details>
 
 
 
