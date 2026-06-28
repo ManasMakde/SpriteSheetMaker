@@ -32,11 +32,11 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
 <details>
 <summary>View Images</summary>
 
-![panel 1](images/panel_1.png)  
-![panel 2](images/panel_2.png)  
-![panel 3](images/panel_3.png)  
-![panel 4](images/panel_4.png)  
-![panel 5](images/panel_5.png)  
+![panel 1](images/showcases/panel_1.png)  
+![panel 2](images/showcases/panel_2.png)  
+![panel 3](images/showcases/panel_3.png)  
+![panel 4](images/showcases/panel_4.png)  
+![panel 5](images/showcases/panel_5.png)  
 
 </details>
 
