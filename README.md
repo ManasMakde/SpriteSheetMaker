@@ -246,13 +246,16 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
          └── 2.png
       ```
 
-2. **Output Folder:**  
+
+1. **Output Folder:**  
    Folder in which the newly created sprite sheet is saved.
 
-3. **Create Single Sprite:**  
+
+1. **Create Single Sprite:**  
    This renders a single sprite with all settings applied. The label for it is taken from the first `Rows` item.
 
-4. **Create Sprite Sheet:**  
+
+1. **Create Sprite Sheet:**  
    This creates the entire sprite sheet (or whichever `Combine Mode` is specified) at the given `Output Folder`, While creating you might see a temp folder by the name of "SpriteSheetMakerTemp" do not delete it otherwise the sheet won't be created properly. 
 
 
@@ -302,60 +305,63 @@ If you followed all the steps your sprite sheet should look something like this:
 
 
 ## ❓ Common Questions
-**_Why is my sprite empty / not showing any objects?_**  
-1. Make sure you've added the desired objects to `Objects to Capture`.
-2. Make sure `Pixels Per Meter` isn't 0 or too small.
-3. Make sure if `To Auto Capture` is unchecked your own camera is setup properly.
-4. Make sure `Pixelation Amount` isn't too much.
-5. Make sure `Min Alpha` & `Alpha step` aren't exceeding 1.0.
-6. Make sure you've added lights.
-7. Try rendering on your own before using this addon to see if the issue persists.
 
-<br/>
+<details><summary><b><i>Why is my sprite empty / not showing any objects?</i></b></summary>
 
-**_Why do strips contain the same or invalid animation?_**  
-Make sure you have assigned the correct actions & slots in "Capture Items" for all strips.
+   1. Make sure you've added the desired objects to `Objects to Capture`.
+   2. Make sure `Pixels Per Meter` isn't 0 or too small.
+   3. Make sure if `To Auto Capture` is unchecked your own camera is setup properly.
+   4. Make sure `Pixelation Amount` isn't too much.
+   5. Make sure `Min Alpha` & `Alpha step` aren't exceeding 1.0.
+   6. Make sure you've added lights.
+   7. Try rendering on your own before using this addon to see if the issue persists.
+</details>
 
-<br/>
+<details><summary><b><i>Why do strips contain the same or invalid animation?</i></b></summary>
 
-**_Why is my content improperly cut off?_**  
-Make sure you have assigned the correct objects in "Capture Items" for all strips.
+   Make sure you have assigned the correct actions & slots in "Capture Items" for all strips.
+</details>
 
-<br/>
+<details><summary><b><i>Why is my content improperly cut off?</i></b></summary>
 
-**_Why is "Create Single Sprite" changing the poses of objects & armatures?_**  
-This is not an addon issue it's just how Blender works while rendering, Try unlinking the actions from the objects & armatures first then create the single sprite.
+   Make sure you have assigned the correct objects in "Capture Items" for all strips.
+</details>
 
-<br/>
+<details><summary><b><i>Why is "Create Single Sprite" changing the poses of objects & armatures?</i></b></summary>
 
-**_Why is Blender crashing when I try to create a sprite sheet?_**  
-1. You might be trying to render an image that is too big i.e. the value of `Pixels Per Meter` is too high or you're trying to capture a really big object with too much resolution, Try rendering without the plugin first to see if the issue still persists.
-2. You might be trying to render too many frames and your system might not be able to handle it.
+   This is not an addon issue it's just how Blender works while rendering, Try unlinking the actions from the objects & armatures first then create the single sprite.
+</details>
 
-<br/>
+<details><summary><b><i>Why is Blender crashing when I try to create a sprite sheet?</i></b></summary>
 
-**_How do I see the progress of sprite sheet creation?_**  
-You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoDQo) where you can see exactly what the plugin is currently doing.
+   1. You might be trying to render an image that is too big i.e. the value of `Pixels Per Meter` is too high or you're trying to capture a really big object with too much resolution, Try rendering without the plugin first to see if the issue still persists.
+   2. You might be trying to render too many frames and your system might not be able to handle it.
+</details>
 
-<br/>
+<details><summary><b><i>How do I see the progress of sprite sheet creation?</i></b></summary>
 
-**_Why isn't the background transparent?_**  
-1. This is not a plugin issue, you have to manually set it in `Render Properties > Film > Transparent` and enable it as shown [here](https://www.youtube.com/watch?v=kgqvS69_X98).
-2. Make sure Output `Properties > Color` is set to RGBA & that `File Format` is .png.
+   You need to open Blender via [console](https://www.youtube.com/watch?v=ijngHwCoDQo) where you can see exactly what the plugin is currently doing.
+</details>
 
-<br/>
+<details><summary><b><i>Why isn't the background transparent?</i></b></summary>
 
-**_How to recontinue interrupted rendering of sprite sheet?_**  
-1. Locate the incomplete "SpriteMakerTemp" folder (or whichever folder you were rendering your sprite frames into) and see which actions have not rendered all frames or are missing.
-2. Then add those missing/incomplete actions to `Actions to Capture` and uncheck the `Delete Temp Folder` and creating a spritesheet (to get a new "SpriteMakerTemp").
-3. Merge the old and new "SpriteMakerTemp" folders together according to the structure mentioned in "How this works?".
-4. Then use the `Combine Sprites` button to get a complete spritesheet.
+   1. This is not a plugin issue, you have to manually set it in `Render Properties > Film > Transparent` and enable it as shown [here](https://www.youtube.com/watch?v=kgqvS69_X98).
+   2. Make sure Output `Properties > Color` is set to RGBA & that `File Format` is .png.
+</details>
 
-<br/>
+<details><summary><b><i>How to recontinue interrupted rendering of sprite sheet?</i></b></summary>
 
-**_Why do my objects not perfectly fit into camera view (especially perspective) when creating auto camera?_**  
-1. Make sure the desired objects are added into the capture items list.
-2. The auto camera perfectly fits the **bounding box** into the view not the object vertices themselves since that would be computationally very expensive. To check this yourself [turn on the bounding box](https://www.youtube.com/watch?v=uL1goLLdIWw).
+   1. Locate the incomplete "SpriteMakerTemp" folder (or whichever folder you were rendering your sprite frames into) and see which actions have not rendered all frames or are missing.
+   2. Then add those missing/incomplete actions to `Actions to Capture` and uncheck the `Delete Temp Folder` and creating a spritesheet (to get a new "SpriteMakerTemp").
+   3. Merge the old and new "SpriteMakerTemp" folders together according to the structure mentioned in "How this works?".
+   4. Then use the `Combine Sprites` button to get a complete spritesheet.
+</details>
+
+<details><summary><b><i>Why do my objects not perfectly fit into camera view (especially perspective) when creating auto camera?</i></b></summary>
+
+   1. Make sure the desired objects are added into the capture items list.
+   2. The auto camera perfectly fits the **bounding box** into the view not the object vertices themselves since that would be computationally very expensive. To check this yourself [turn on the bounding box](https://www.youtube.com/watch?v=uL1goLLdIWw).
+</details>
 
 <br/>
 
