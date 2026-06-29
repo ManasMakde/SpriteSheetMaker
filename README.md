@@ -69,7 +69,7 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    ![Rows screenshot](images/screenshots/rows_screenshot.png)   
 
    Each one of these represent a row within a sprite sheet.  
-   You can enable/disable them by using the <img src="images/row_enable_button.png"/> button.  
+   You can enable/disable them by using the <img src="images/row_enable_button.png"/> button. (Disabled rows won't show up in the sheet)  
    You can duplicate them by using the <img src="images/duplicate_button.png"/> button on the side.  
    You can add or remove them using the + and - buttons on the side.  
    You can reorder them using the arrow ▲ and ▼ buttons on the side.
