@@ -720,22 +720,25 @@ class SSM_OT_ImportSettings(Operator, ImportHelper):
                 item = row.capture_items.add()
 
                 # Add object to capture item
-                if(item_data.get("object") in bpy.data.objects):
-                    item.object = bpy.data.objects[item_data["object"]]
+                obj_name = item_data.get("object", "")
+                if obj_name == "":
+                    item.object = None
+                elif obj_name in bpy.data.objects:
+                    item.object = bpy.data.objects[obj_name]
                 else:
-                    missing_obj = item_data.get('object')
-                    log(f"Missing object '{missing_obj}' found while importing!")
+                    log(f"Missing object '{obj_name}' found while importing!")
                     item.object = None
 
 
                 # Add action to capture item
-                if(item_data.get("action") in bpy.data.actions):
-                    item.action = bpy.data.actions[item_data["action"]]
-                else:
-                    missing_action = item_data.get('action')
-                    log(f"Missing action '{missing_action}' found while importing!")
+                action_name = item_data.get("action", "")
+                if action_name == "":
                     item.action = None
-
+                elif action_name in bpy.data.actions:
+                    item.action = bpy.data.actions[action_name]
+                else:
+                    log(f"Missing action '{action_name}' found while importing!")
+                    item.action = None
                 
                 # Add slot to capture item
                 item.slot = item_data.get("slot", "")

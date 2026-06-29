@@ -178,6 +178,8 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    - **Pixelate Test Image:**  
       Generates a pixelated version of the test image provided. This is purely for testing purposes on the provided image, this button will not effect your sprite sheet in any way (You can also think of this as a standalone pixelizer for images).
 
+   > **Note:**  
+   > If the pixelated sprite quality is improper, Try increasing the `Pixels Per Meter` and trying again. 
 
 1. **Manual Frame Selection:**  
    ![Manual Frame Selection screenshot](images/screenshots/manual_frame_screenshot.png)  

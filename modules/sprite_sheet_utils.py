@@ -136,7 +136,7 @@ def calc_target_loc(target_obj, target_bone:str):
 
     # If not armature
     if(target_obj.type != 'ARMATURE'):
-        return target_obj.location
+        return target_obj.matrix_world.translation
 
 
     # If armature has bone
@@ -146,7 +146,7 @@ def calc_target_loc(target_obj, target_bone:str):
     
 
     # If no bone
-    return target_obj.location
+    return target_obj.matrix_world.translation
 def calc_orientation_vectors(rotations):
 
     # Extract all rotations
@@ -631,7 +631,7 @@ def create_auto_camera(param:AutoCaptureParam):
     return cam_obj
 def setup_auto_camera(cam_obj, param:AutoCaptureParam):
     
-    # Return If no camera provided
+    # Create auto camera if not provided
     if cam_obj is None:
         cam_obj = create_auto_camera(param)
 
@@ -852,8 +852,8 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
             
             # Assign Render settings
             width, height = image.size
-            pixelate_scene.render.resolution_x = int(width * (1.0 - param.pixelation_amount))
-            pixelate_scene.render.resolution_y = int(height * (1.0 - param.pixelation_amount))
+            pixelate_scene.render.resolution_x = max(1, int(width * (1.0 - param.pixelation_amount)))
+            pixelate_scene.render.resolution_y = max(1, int(height * (1.0 - param.pixelation_amount)))
 
             # Assign output path
             output_path = image_paths[input_path]
@@ -901,9 +901,6 @@ class SpriteSheetMaker():
     def create_sprite(self, camera, output_path):
         
         # Setup Camera
-        old_resolution_x = bpy.context.scene.render.resolution_x
-        old_resolution_y = bpy.context.scene.render.resolution_y
-        old_camera = bpy.context.scene.camera
         if(camera is not None):
             bpy.context.scene.camera = camera
 
@@ -913,12 +910,6 @@ class SpriteSheetMaker():
         self.on_sprite_creating.broadcast()
         render(output_path)
         self.on_sprite_created.broadcast()
-        
-
-        # Reset Camera
-        bpy.context.scene.render.resolution_x = old_resolution_x 
-        bpy.context.scene.render.resolution_y = old_resolution_y
-        bpy.context.scene.camera = old_camera
     def create_sprite_sheet_impl(self, param:SpriteSheetParam, temp_dir:str):
 
         # Iterate through actions and capture render for each frame (Each action should have it's own folder (in order) & image names should be 1, 2, 3 for each frame respectively)
@@ -965,7 +956,7 @@ class SpriteSheetMaker():
                 # Assign action
                 obj.animation_data.action = action
                 
-                # Assign user provided slot else efault slot
+                # Assign slot
                 slot_name = f"OB{slot}"
                 if slot != "" and action != None and (slot_name in action.slots):
                     obj.animation_data.action_slot = action.slots[slot_name]
@@ -1038,6 +1029,9 @@ class SpriteSheetMaker():
         
         # Hide all non capture items and show all capture items
         original_visibility = assign_objects_visibility(param.animation_rows)
+        original_camera = bpy.context.scene.camera
+        original_resolution_x = bpy.context.scene.render.resolution_x
+        original_resolution_y = bpy.context.scene.render.resolution_y
 
 
         # Intentionally kept inside try so that visibility is restored even incase of failure
@@ -1059,17 +1053,16 @@ class SpriteSheetMaker():
             # Delete temp folder
             if param.delete_temp_folder:
                 shutil.rmtree(temp_dir)
-        
-            # Reset original visibility of all objects
-            restore_object_visibility(original_visibility)
-
         except Exception as e:
+            log(f"Failed while capturing sprite sheet frames: {e} \n {traceback.format_exc()}")
+            raise e
+        finally:
 
             # Reset original visibility of all objects
             restore_object_visibility(original_visibility)
-            log(f"Failed while capturing sprite sheet frames: {e} \n {traceback.format_exc()}")
-            
-            raise e
+            bpy.context.scene.camera = original_camera
+            bpy.context.scene.render.resolution_x = original_resolution_x
+            bpy.context.scene.render.resolution_y = original_resolution_y
 
 
         return True
