@@ -26,7 +26,7 @@ DEFAULT_SETTINGS_FILE_NAME = "ssm_settings.json"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_ROW_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
-EXCLUDE_SYNC_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "in_sync", "enabled"}
+EXCLUDE_EXPORT_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "enabled"}
 NON_SERIALIZABLE_PROPERTIES = {"custom_camera", "h_center_object", "v_center_object"} 
 
 
@@ -82,6 +82,8 @@ class SSM_CaptureItem(PropertyGroup):
     previous_action_name: StringProperty(default="", description="Tracks last assigned action name to detect when it gets removed")
 class SSM_RowInfo(PropertyGroup):
 
+    _is_propagating = False  # used to avoid recursion while propagating property to all rows
+
     def update_label_from_action(self, removed_action_name=""):
 
         # Clear label if it matches the action that was just removed
@@ -101,27 +103,49 @@ class SSM_RowInfo(PropertyGroup):
             
             self.label = item.action.name
             break
-    def sync_update(self, context, prop_name):
+    def alt_sync_update(self, context, prop_name):
 
-        row = get_current_row()
-        if not row.in_sync:
+        # Return if alt key not held
+        if not SSM_OT_KeyListener.is_alt_pressed:
             return
-    
-        SSM_OT_SyncRow.sync(context, {prop_name})
+
+        # Return if already propagating to avoid recursion
+        if SSM_RowInfo._is_propagating:
+            return
+
+
+        # Mark as propagating
+        SSM_RowInfo._is_propagating = True
+
+        # Copy this property to all other rows
+        try:
+            new_value = getattr(self, prop_name)
+            for row in context.scene.animation_rows:
+                if row == self or not hasattr(row, prop_name):
+                    continue
+
+                setattr(row, prop_name, new_value)
+
+            log(f"Propagated '{prop_name}' across all rows!")
+        except Exception as e:
+            log(f"Failed to propagate '{prop_name}' across all rows Error {e} \n {traceback.format_exc()}")
+
+        # Mark propagating as complete
+        SSM_RowInfo._is_propagating = False
+
 
     enabled: BoolProperty(name="Enabled", default=True, description="If disabled this row will not be included while creating the sprite sheet")
-    in_sync: BoolProperty(name="Sync Row", default=False)
     label: StringProperty(name="Label", default="", description="The text that will be added on top of the row in the sprite sheet")
     capture_items: CollectionProperty(type=SSM_CaptureItem)
     capture_item_index: IntProperty(default=0, description="Pointer tracking active item inside collection")
     
     
     # Camera settings
-    custom_camera: PointerProperty(name="Custom Camera", type=Object, poll=lambda self, obj: obj.type == 'CAMERA', description="Custom camera object to use for rendering this row", update=lambda self, ctx: self.sync_update(ctx, "custom_camera"))
-    to_auto_capture: BoolProperty(name="To Auto Capture", default=True, description="Automatically calculate and position camera bounding box", update=lambda self, ctx: self.sync_update(ctx, "to_auto_capture"))
+    custom_camera: PointerProperty(name="Custom Camera", type=Object, poll=lambda self, obj: obj.type == 'CAMERA', description="Custom camera object to use for rendering this row\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "custom_camera"))
+    to_auto_capture: BoolProperty(name="To Auto Capture", default=True, description="Automatically calculate and position camera bounding box\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "to_auto_capture"))
     camera_direction: EnumProperty(
         name="Camera Direction",
-        description="Direction from which the camera will look toward the targeted objects",
+        description="Direction from which the camera will look toward the targeted objects\nHold Alt & change to sync across all rows",
         items = [
             (CameraDirection.X.value, "X", "Camera pointing along the X axis"),
             (CameraDirection.Y.value, "Y", "Camera pointing along the Y axis"),
@@ -132,46 +156,46 @@ class SSM_RowInfo(PropertyGroup):
             (CameraDirection.CUSTOM.value, "Custom", "Custom camera orientation")
         ],
         default=CameraDirection.NEG_X.value,
-        update=lambda self, ctx: self.sync_update(ctx, "camera_direction")
+        update=lambda self, ctx: self.alt_sync_update(ctx, "camera_direction")
     )
-    camera_orbit_z: FloatProperty(name="Orbit-Z", default=0.0, subtype='ANGLE', description="Orbit rotation around Z axis of capture objects")
-    camera_orbit_x: FloatProperty(name="Orbit-X", default=0.0, subtype='ANGLE', description="Orbit rotation around X axis of capture objects")
-    camera_roll: FloatProperty(name="Roll", default=0.0, subtype='ANGLE', description="Roll rotation around cameras on pointing axis")
+    camera_orbit_z: FloatProperty(name="Orbit-Z", default=0.0, subtype='ANGLE', description="Orbit rotation around Z axis of capture objects\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "camera_orbit_z"))
+    camera_orbit_x: FloatProperty(name="Orbit-X", default=0.0, subtype='ANGLE', description="Orbit rotation around X axis of capture objects\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "camera_orbit_x"))
+    camera_roll: FloatProperty(name="Roll", default=0.0, subtype='ANGLE', description="Roll rotation around cameras on pointing axis\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "camera_roll"))
 
-    h_center_object: PointerProperty(name="Horizontal Center Object", type=Object, description="Object whose origin will be used as the horizontal center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "h_center_object"))
-    h_center_bone: StringProperty(name="Horizontal Center Bone", default="", description="Bone whose origin will be used as the horizontal center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "h_center_bone"))
-    v_center_object: PointerProperty(name="Vertical Center Object", type=Object, description="Object whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_object"))
-    v_center_bone: StringProperty(name="Vertical Center Bone", default="", description="Bone whose origin will be used as the vertically center for each sprite frame", update=lambda self, ctx: self.sync_update(ctx, "v_center_bone"))
+    h_center_object: PointerProperty(name="Horizontal Center Object", type=Object, description="Object whose origin will be used as the horizontal center for each sprite frame\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "h_center_object"))
+    h_center_bone: StringProperty(name="Horizontal Center Bone", default="", description="Bone whose origin will be used as the horizontal center for each sprite frame\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "h_center_bone"))
+    v_center_object: PointerProperty(name="Vertical Center Object", type=Object, description="Object whose origin will be used as the vertically center for each sprite frame\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "v_center_object"))
+    v_center_bone: StringProperty(name="Vertical Center Bone", default="", description="Bone whose origin will be used as the vertically center for each sprite frame\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "v_center_bone"))
     
-    consider_armature_bones: BoolProperty(default=False, description="Include all armature bones when calculating auto-capture camera bounds to ensure they remain within camera view", update=lambda self, ctx: self.sync_update(ctx, "consider_armature_bones"))
-    pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, description="Number of pixels rendered per one world space meter unit", update=lambda self, ctx: self.sync_update(ctx, "pixels_per_meter"))
-    camera_padding_h: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding_h"))
-    camera_padding_v: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view", update=lambda self, ctx: self.sync_update(ctx, "camera_padding_v"))
+    consider_armature_bones: BoolProperty(default=False, description="Include all armature bones when calculating auto-capture camera bounds to ensure they remain within camera view\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "consider_armature_bones"))
+    pixels_per_meter: FloatProperty(name="Pixels Per Meter", default=100.0, min=1.0, soft_max=5000.0, description="Number of pixels rendered per one world space meter unit\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "pixels_per_meter"))
+    camera_padding_h: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "camera_padding_h"))
+    camera_padding_v: FloatProperty(name="Camera Padding", unit='LENGTH', default=0.0, min=0.0, soft_max=10.0, description="Extra margin around camera view\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "camera_padding_v"))
 
 
     # Pixelation settings
-    to_pixelate: BoolProperty(name="To Pixelate", default=False, description="If enabled the row is pixelated", update=lambda self, ctx: self.sync_update(ctx, "to_pixelate"))
-    pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0, description="By how much amount to pixelate the row", update=lambda self, ctx: self.sync_update(ctx, "pixelation_amount"))
-    color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000, description="How much amount of color to keep within the row", update=lambda self, ctx: self.sync_update(ctx, "color_amount"))
-    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.1, description="If any pixel in the row has a transparency less than this amount then it is discarded\nSet as 1.0 if to remove all semi-transparent pixel", update=lambda self, ctx: self.sync_update(ctx, "min_alpha"))
-    alpha_step: FloatProperty(name="Alpha Step", default=0.0, min=0.0, max=1.1, description="Ensures that all pixels have a transparency which is a multiple of this amount", update=lambda self, ctx: self.sync_update(ctx, "alpha_step"))
+    to_pixelate: BoolProperty(name="To Pixelate", default=False, description="If enabled the row is pixelated\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "to_pixelate"))
+    pixelation_amount: FloatProperty(name="Pixelation Amount", default=0.9, precision=5, step=0.001, min=0.0, max=1.0, description="By how much amount to pixelate the row\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "pixelation_amount"))
+    color_amount: FloatProperty(name="Pixelation Color Amount", default=50.0, min=0.0, soft_max=1000, description="How much amount of color to keep within the row\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "color_amount"))
+    min_alpha: FloatProperty(name="Min Alpha", default=0.0, min=0.0, max=1.1, description="If any pixel in the row has a transparency less than this amount then it is discarded\nSet as 1.0 if to remove all semi-transparent pixel\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "min_alpha"))
+    alpha_step: FloatProperty(name="Alpha Step", default=0.0, min=0.0, max=1.1, description="Ensures that all pixels have a transparency which is a multiple of this amount\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "alpha_step"))
     pixelate_image_path: StringProperty(
         name="Pixelate Image Path",
         subtype="FILE_PATH",
-        description="Target image to pixelate",
-        update=lambda self, ctx: self.sync_update(ctx, "pixelate_image_path")
+        description="Target image to pixelate\nHold Alt & change to sync across all rows",
+        update=lambda self, ctx: self.alt_sync_update(ctx, "pixelate_image_path")
     )
     
     
     # Flip settings
-    to_flip_h: BoolProperty(name="To Flip H", default=False, description="If enabled the rendered image is flipped horizontally before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_h"))
-    to_flip_v: BoolProperty(name="To Flip V", default=False, description="If enabled the rendered image is flipped vertically before saving into temp folder", update=lambda self, ctx: self.sync_update(ctx, "to_flip_v"))
+    to_flip_h: BoolProperty(name="To Flip H", default=False, description="If enabled the rendered image is flipped horizontally before saving into temp folder\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "to_flip_h"))
+    to_flip_v: BoolProperty(name="To Flip V", default=False, description="If enabled the rendered image is flipped vertically before saving into temp folder\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "to_flip_v"))
     
     
     # Manual frame settings
-    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the row\nIf disabled, the start & end frame of longest action will be taken")
-    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574)
-    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574)
+    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the row\nIf disabled, the start & end frame of longest action will be taken\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "manual_frames"))
+    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574, description="Frame to start capturing from\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_start"))
+    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574, description="Frame to stop capturing at (inclusive)\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_end"))
 class SSM_Properties(PropertyGroup):
 
     def update_temp_folder(self, context):
@@ -353,7 +377,6 @@ class SSM_OT_AddRow(Operator):
         scene.animation_rows.add()
         # new.frame_start = 1
         # new.frame_end = 250
-        SSM_OT_SyncRow.sync(context)
         scene.row_index = len(scene.animation_rows) - 1
         return {'FINISHED'}
 class SSM_OT_RemoveRow(Operator):
@@ -396,110 +419,6 @@ class SSM_OT_MoveRow(Operator):
             scene.row_index += 1
 
         return {"FINISHED"}
-class SSM_OT_SyncRow(Operator):
-    bl_idname = "spritesheetmaker.sync_rows"
-    bl_label = "Sync Row"
-    bl_description = "All rows which have this enabled will have their properties in sync with each other\nAlt + Click to assign properties of current row to all other rows which are in sync"
-    bl_options = {'UNDO'}
-    
-    _is_syncing = False
-
-
-    @staticmethod
-    def _copy_properties(src_row, dest_row, properties=None):
-
-        # Assign all if no properties provided
-        properties = set(properties) if properties else set()
-        if not properties: 
-            for p in src_row.rna_type.properties:
-                if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
-                    properties.add(p.identifier)
-        
-
-        # Copy paste all properties from src to dest
-        for prop in properties:
-            if hasattr(dest_row, prop):
-                setattr(dest_row, prop, getattr(src_row, prop))
-
-
-    @staticmethod
-    def _sync_impl(context, properties=None):
-        
-        # Get synced row
-        scene = context.scene
-        rows = scene.animation_rows
-        curr_idx = scene.row_index
-        if(rows[curr_idx].in_sync):
-            synced_row = rows[curr_idx]
-        else:
-            _, synced_row = get_synced_row()
-
-
-        # Return if no synced row
-        if(synced_row == None):
-            return
-
-
-        # Sync properties to all other rows
-        for i, dest_row in enumerate(rows):
-            if i == curr_idx or not dest_row.in_sync:
-                continue
-            
-            SSM_OT_SyncRow._copy_properties(synced_row, dest_row, properties)
-            
-
-    @staticmethod
-    def sync(context, properties=None):
-
-        # To avoid infinite recursion
-        if SSM_OT_SyncRow._is_syncing:
-            return
-        
-
-        # Mark as sync started
-        SSM_OT_SyncRow._is_syncing = True
-
-
-        # Sync
-        try:
-            SSM_OT_SyncRow._sync_impl(context, properties)
-            log(f"Synced {properties if properties != None else 'All'} across all rows!")
-        except Exception as e:
-            log(f"Failed to sync properties '{properties}' across all rows! Error: {e} \n {traceback.format_exc()}")
-
-    
-        # Mark as sync complete
-        SSM_OT_SyncRow._is_syncing = False
-
-
-    def execute(self, context):
-
-        # Toggle in sync button
-        curr_row = get_current_row()
-        if(not curr_row):
-            return {'FINISHED'}
-
-
-        curr_row.in_sync = not curr_row.in_sync
-        
-
-        # Return if toggled off or nothing to sync
-        if(not curr_row.in_sync or not are_any_in_sync()):
-            return {'FINISHED'}
-        
-
-        # If alt pressed; synchronize all other rows with this row
-        if(SSM_OT_KeyListener.is_alt_pressed):
-            SSM_OT_SyncRow.sync(context)
-            return {'FINISHED'}
-
-
-        # Sync properties of this row with others
-        _, synced_row = get_synced_row()
-        SSM_OT_SyncRow._copy_properties(synced_row, curr_row)
-
-
-        return {'FINISHED'}
 class SSM_OT_PlayCaptureItems(Operator):
     bl_idname = "spritesheetmaker.play_capture_items"
     bl_label = "Play Capture Items"
@@ -649,7 +568,7 @@ class SSM_OT_ExportSettings(Operator, ExportHelper):
         
         # Store all common properties
         for p in props.rna_type.properties:
-            if not p.is_readonly and p.identifier not in EXCLUDE_SYNC_PROPERTIES:
+            if not p.is_readonly and p.identifier not in EXCLUDE_EXPORT_PROPERTIES:
                 prop_value = getattr(props, p.identifier)
                 export_data["props"][p.identifier] = list(prop_value) if getattr(p, "is_array", False) else prop_value
 
@@ -1054,15 +973,7 @@ class SSM_PT_MainPanel(Panel):
         row = scene.animation_rows[scene.row_index]
         split = ui_box.split(factor=0.25)
         split.label(text="Label")
-        ui_label_line = split.row(align=False)
-        col_label_prop = ui_label_line.column(align=True)
-        col_label_prop.prop(row, 'label', text='')
-
-
-        # Sync Button
-        col_sync_btn = ui_label_line.column(align=True)
-        curr_row = get_current_row()
-        col_sync_btn.operator("spritesheetmaker.sync_rows", text="", icon='INTERNET', depress=curr_row.in_sync)
+        split.prop(row, 'label', text='')
 
 
         # Capture Items
@@ -1504,24 +1415,6 @@ def get_objects_to_capture(row):
 
 
     return objects
-def get_synced_row():
-    scene = bpy.context.scene
-    rows = scene.animation_rows
-
-    for i, row in enumerate(rows):
-        if(row.in_sync):
-            return i, row
-
-    return -1, None
-def are_any_in_sync():
-    scene = bpy.context.scene
-    rows = scene.animation_rows
-
-    for row in rows:
-        if(row.in_sync):
-            return True
-
-    return False
 
 
 # Initialize Classes
@@ -1542,7 +1435,6 @@ classes = (
     SSM_OT_PlayCaptureItems,
     SSM_OT_AddCaptureItem,
     SSM_OT_RemoveCaptureItem,
-    SSM_OT_SyncRow,
     SSM_OT_CreateAutoCamera,
     SSM_OT_PixelateImage,
     SSM_OT_CombineSprites,

@@ -85,14 +85,9 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    
    You can preview all the actions to be rendered in this row by pressing ▶︎ button.
    
+   > **Note:**  
+   > You can hold Alt and change any of the Row Info properties (except `Label` & `Capture Items`) to sync changes across all rows.
 
-   - <img src="images/sync_button.png" /> **Sync Button:**   
-      If enabled (i.e. in-sync), The `Custom Camera`, `Auto Capture` & `Pixelate` Properties stay in sync with all other rows which have this button enabled.  
-      
-      If disabled, Changing properties for that row won't effect other rows.   
-      
-      If you hold `Alt` and then click on this button, the properties of the current row will be synced onto all the other rows that are in-sync.  
-   
    -  **Label:**  
       This is the text that will be added on top of the row in the sprite sheet.
 
