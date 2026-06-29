@@ -69,7 +69,8 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    ![Rows screenshot](images/screenshots/rows_screenshot.png)   
 
    Each one of these represent a row within a sprite sheet.  
-   You can duplicate by using the <img src="images/duplicate_button.png"/> button.  
+   You can enable/disable them by using the <img src="images/row_enable_button.png"/> button. (Disabled rows won't show up in the sheet)  
+   You can duplicate them by using the <img src="images/duplicate_button.png"/> button on the side.  
    You can add or remove them using the + and - buttons on the side.  
    You can reorder them using the arrow ▲ and ▼ buttons on the side.
 
@@ -91,7 +92,6 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
       If disabled, Changing properties for that row won't effect other rows.   
       
       If you hold `Alt` and then click on this button, the properties of the current row will be synced onto all the other rows that are in-sync.  
-
    
    -  **Label:**  
       This is the text that will be added on top of the row in the sprite sheet.
@@ -102,6 +102,11 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
       `Action`: This refers to what action the aforementioned object should be playing  
       `Slot`: This refers to [action slot](https://www.youtube.com/watch?v=N4GlTIz66EA) to be used (leave blank if you're unsure)  
 
+      > **Note:**  
+      > If the Label is empty and an action is assgined then the Label will automatically be set to the action name.  
+      > As long as the Label matches the action name both will remain in sync.  
+      > If you don't want this behaviour then simply add an empty space " " at the end of the Label.  
+   
    - **Custom Camera:**  
       If provided, this camera will be used to capture images
 
@@ -173,6 +178,8 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    - **Pixelate Test Image:**  
       Generates a pixelated version of the test image provided. This is purely for testing purposes on the provided image, this button will not effect your sprite sheet in any way (You can also think of this as a standalone pixelizer for images).
 
+   > **Note:**  
+   > If the pixelated sprite quality is improper, Try increasing the `Pixels Per Meter` and trying again. 
 
 1. **Manual Frame Selection:**  
    ![Manual Frame Selection screenshot](images/screenshots/manual_frame_screenshot.png)  

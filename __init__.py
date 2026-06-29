@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Sprite Sheet Maker",
     "author": "Manas R. Makde",
-    "version": (5, 2, 0),
+    "version": (5, 2, 1),
     "description": "3D to 2D sprite sheet converter with optional pixelation"
 }
 
@@ -26,7 +26,7 @@ DEFAULT_SETTINGS_FILE_NAME = "ssm_settings.json"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_ROW_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
-EXCLUDE_SYNC_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "in_sync"}
+EXCLUDE_SYNC_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "in_sync", "enabled"}
 NON_SERIALIZABLE_PROPERTIES = {"custom_camera", "h_center_object", "v_center_object"} 
 
 
@@ -53,19 +53,42 @@ class SSM_MessagePopup(Operator):
 class SSM_CaptureItem(PropertyGroup):
 
     def action_update(self, context):
+
+        # Get row in which action was updated
+        self_row = None
         for row in context.scene.animation_rows:
             for it in row.capture_items:
                 if it == self:
-                    row.update_label_from_action()
-                    return
+                    self_row = row
+                    break
+        
+
+        # Return if row not found
+        if(self_row is None):
+            return
+        
+        
+        # Updated label of the row
+        self_row.update_label_from_action(self.previous_action_name)
+
+
+        # Store action name of row
+        self.previous_action_name = self.action.name if self.action else ""
+        
 
     object: PointerProperty(name="Object", type=Object, description="Target object to be rendered within row")
     action: PointerProperty(name="Action", type=Action, description="Animation to be captured in the row", update=action_update)
     slot: StringProperty(name="Slot", default="", description="(Optional)")
+    previous_action_name: StringProperty(default="", description="Tracks last assigned action name to detect when it gets removed")
 class SSM_RowInfo(PropertyGroup):
 
-    def update_label_from_action(self):
-        
+    def update_label_from_action(self, removed_action_name=""):
+
+        # Clear label if it matches the action that was just removed
+        if(self.label != "" and self.label == removed_action_name):
+            self.label = ""
+
+
         # Return if label already assigned
         if(self.label != ""):
             return
@@ -77,7 +100,7 @@ class SSM_RowInfo(PropertyGroup):
                 continue
             
             self.label = item.action.name
-            return
+            break
     def sync_update(self, context, prop_name):
 
         row = get_current_row()
@@ -86,6 +109,7 @@ class SSM_RowInfo(PropertyGroup):
     
         SSM_OT_SyncRow.sync(context, {prop_name})
 
+    enabled: BoolProperty(name="Enabled", default=True, description="If disabled this row will not be included while creating the sprite sheet")
     in_sync: BoolProperty(name="Sync Row", default=False)
     label: StringProperty(name="Label", default="", description="The text that will be added on top of the row in the sprite sheet")
     capture_items: CollectionProperty(type=SSM_CaptureItem)
@@ -223,6 +247,7 @@ class SSM_Properties(PropertyGroup):
     show_output_settings: BoolProperty(name="Show Output Settings", default=False)
 class SSM_UL_AnimationRows(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+        layout.prop(item, "enabled", text="")
         layout.label(text=item.label if item.label != "" else UNTITLED_ROW_NAME, icon='SEQ_STRIP_DUPLICATE')
 class SSM_UL_CaptureItems(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
@@ -563,8 +588,17 @@ class SSM_OT_RemoveCaptureItem(Operator):
         row = scene.animation_rows[si]
         ii = row.capture_item_index
         if 0 <= ii < len(row.capture_items):
+
+            # Capture removed action name before deleting item
+            removed_item = row.capture_items[ii]
+            removed_action_name = removed_item.action.name if removed_item.action else ""
+
+            # Remove capture item
             row.capture_items.remove(ii)
             row.capture_item_index = max(0, ii - 1)
+
+            # Update label
+            row.update_label_from_action(removed_action_name)
         return {'FINISHED'}
 
 
@@ -686,22 +720,25 @@ class SSM_OT_ImportSettings(Operator, ImportHelper):
                 item = row.capture_items.add()
 
                 # Add object to capture item
-                if(item_data.get("object") in bpy.data.objects):
-                    item.object = bpy.data.objects[item_data["object"]]
+                obj_name = item_data.get("object", "")
+                if obj_name == "":
+                    item.object = None
+                elif obj_name in bpy.data.objects:
+                    item.object = bpy.data.objects[obj_name]
                 else:
-                    missing_obj = item_data.get('object')
-                    log(f"Missing object '{missing_obj}' found while importing!")
+                    log(f"Missing object '{obj_name}' found while importing!")
                     item.object = None
 
 
                 # Add action to capture item
-                if(item_data.get("action") in bpy.data.actions):
-                    item.action = bpy.data.actions[item_data["action"]]
-                else:
-                    missing_action = item_data.get('action')
-                    log(f"Missing action '{missing_action}' found while importing!")
+                action_name = item_data.get("action", "")
+                if action_name == "":
                     item.action = None
-
+                elif action_name in bpy.data.actions:
+                    item.action = bpy.data.actions[action_name]
+                else:
+                    log(f"Missing action '{action_name}' found while importing!")
+                    item.action = None
                 
                 # Add slot to capture item
                 item.slot = item_data.get("slot", "")
@@ -953,8 +990,18 @@ class SSM_OT_CreateSheet(Operator):
             return {'FINISHED'}
 
 
+        # Return if no rows are enabled
+        if(not any(row.enabled for row in scene.animation_rows)):
+            log("No 'Rows' are enabled!", True, "CANCEL")
+            return {'FINISHED'}
+        
+
         # Return in case of anything invalid in row
         for row in scene.animation_rows:
+
+            if(not row.enabled):
+                continue
+    
             if(not SSM_OT_CreateSheet.check_row(row)):
                 return {'FINISHED'}
             
@@ -1361,6 +1408,11 @@ def gen_sprite_sheet_param():
     # Assign rows
     param.animation_rows = []
     for row in scene.animation_rows:
+
+        # Skip disabled rows
+        if(not row.enabled):
+            continue
+
         row_param = gen_row_param(row)
         param.animation_rows.append(row_param)
 
