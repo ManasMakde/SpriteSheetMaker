@@ -53,19 +53,42 @@ class SSM_MessagePopup(Operator):
 class SSM_CaptureItem(PropertyGroup):
 
     def action_update(self, context):
+
+        # Get row in which action was updated
+        self_row = None
         for row in context.scene.animation_rows:
             for it in row.capture_items:
                 if it == self:
-                    row.update_label_from_action()
-                    return
+                    self_row = row
+                    break
+        
+
+        # Return if row not found
+        if(self_row is None):
+            return
+        
+        
+        # Updated label of the row
+        self_row.update_label_from_action(self.previous_action_name)
+
+
+        # Store action name of row
+        self.previous_action_name = self.action.name if self.action else ""
+        
 
     object: PointerProperty(name="Object", type=Object, description="Target object to be rendered within row")
     action: PointerProperty(name="Action", type=Action, description="Animation to be captured in the row", update=action_update)
     slot: StringProperty(name="Slot", default="", description="(Optional)")
+    previous_action_name: StringProperty(default="", description="Tracks last assigned action name to detect when it gets removed")
 class SSM_RowInfo(PropertyGroup):
 
-    def update_label_from_action(self):
-        
+    def update_label_from_action(self, removed_action_name=""):
+
+        # Clear label if it matches the action that was just removed
+        if(self.label != "" and self.label == removed_action_name):
+            self.label = ""
+
+
         # Return if label already assigned
         if(self.label != ""):
             return
@@ -77,7 +100,7 @@ class SSM_RowInfo(PropertyGroup):
                 continue
             
             self.label = item.action.name
-            return
+            break
     def sync_update(self, context, prop_name):
 
         row = get_current_row()
@@ -565,8 +588,17 @@ class SSM_OT_RemoveCaptureItem(Operator):
         row = scene.animation_rows[si]
         ii = row.capture_item_index
         if 0 <= ii < len(row.capture_items):
+
+            # Capture removed action name before deleting item
+            removed_item = row.capture_items[ii]
+            removed_action_name = removed_item.action.name if removed_item.action else ""
+
+            # Remove capture item
             row.capture_items.remove(ii)
             row.capture_item_index = max(0, ii - 1)
+
+            # Update label
+            row.update_label_from_action(removed_action_name)
         return {'FINISHED'}
 
 
