@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "sprite_sheet_maker"
-version = "5.2.0"
+version = "5.2.1"
 name = "Sprite Sheet Maker"
 tagline = "3D to 2D sprite sheet converter with optional pixelation"
 maintainer = "Manas R. Makde"
