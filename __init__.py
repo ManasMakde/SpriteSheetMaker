@@ -26,7 +26,7 @@ DEFAULT_SETTINGS_FILE_NAME = "ssm_settings.json"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_ROW_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
-EXCLUDE_SYNC_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "in_sync"}
+EXCLUDE_SYNC_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "in_sync", "enabled"}
 NON_SERIALIZABLE_PROPERTIES = {"custom_camera", "h_center_object", "v_center_object"} 
 
 
@@ -86,6 +86,7 @@ class SSM_RowInfo(PropertyGroup):
     
         SSM_OT_SyncRow.sync(context, {prop_name})
 
+    enabled: BoolProperty(name="Enabled", default=True, description="If disabled this row will not be included while creating the sprite sheet")
     in_sync: BoolProperty(name="Sync Row", default=False)
     label: StringProperty(name="Label", default="", description="The text that will be added on top of the row in the sprite sheet")
     capture_items: CollectionProperty(type=SSM_CaptureItem)
@@ -223,6 +224,7 @@ class SSM_Properties(PropertyGroup):
     show_output_settings: BoolProperty(name="Show Output Settings", default=False)
 class SSM_UL_AnimationRows(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
+        layout.prop(item, "enabled", text="")
         layout.label(text=item.label if item.label != "" else UNTITLED_ROW_NAME, icon='SEQ_STRIP_DUPLICATE')
 class SSM_UL_CaptureItems(UIList):
     def draw_item(self, context, layout, data, item, icon, active_data, active_propname):
@@ -953,8 +955,18 @@ class SSM_OT_CreateSheet(Operator):
             return {'FINISHED'}
 
 
+        # Return if no rows are enabled
+        if(not any(row.enabled for row in scene.animation_rows)):
+            log("No 'Rows' are enabled!", True, "CANCEL")
+            return {'FINISHED'}
+        
+
         # Return in case of anything invalid in row
         for row in scene.animation_rows:
+
+            if(not row.enabled):
+                continue
+    
             if(not SSM_OT_CreateSheet.check_row(row)):
                 return {'FINISHED'}
             
@@ -1361,6 +1373,11 @@ def gen_sprite_sheet_param():
     # Assign rows
     param.animation_rows = []
     for row in scene.animation_rows:
+
+        # Skip disabled rows
+        if(not row.enabled):
+            continue
+
         row_param = gen_row_param(row)
         param.animation_rows.append(row_param)
 
