@@ -26,7 +26,6 @@ DEFAULT_SETTINGS_FILE_NAME = "ssm_settings.json"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_ROW_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
-EXCLUDE_EXPORT_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "enabled"}
 NON_SERIALIZABLE_PROPERTIES = {"custom_camera", "h_center_object", "v_center_object"} 
 
 
@@ -581,7 +580,7 @@ class SSM_OT_ExportSettings(Operator, ExportHelper):
         
         # Store all common properties
         for p in props.rna_type.properties:
-            if not p.is_readonly and p.identifier not in EXCLUDE_EXPORT_PROPERTIES:
+            if not p.is_readonly and p.identifier not in { "name", "show_output_settings", "show_row_info" }:
                 prop_value = getattr(props, p.identifier)
                 export_data["props"][p.identifier] = list(prop_value) if getattr(p, "is_array", False) else prop_value
 

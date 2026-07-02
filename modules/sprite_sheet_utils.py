@@ -886,17 +886,18 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
     original_scene = bpy.context.scene
 
 
-    # Set pixelate scene as active
-    bpy.context.window.scene = pixelate_scene
-
-
-    # Store composition groups
-    all_node_groups = get_node_groups(pixelate_scene.compositing_node_group)  #  Storing since removing scene won't remove node groups
-
-
     # Intentionally kept inside try so that temp scene is deleted even incase of failure
     exception = None
     try:
+
+        # Set pixelate scene as active
+        bpy.context.window.scene = pixelate_scene
+
+
+        # Store composition groups
+        all_node_groups = get_node_groups(pixelate_scene.compositing_node_group)  #  Storing since removing scene won't remove node groups
+
+
         # Remove and existing nodes from compositor
         tree = pixelate_scene.compositing_node_group
        
