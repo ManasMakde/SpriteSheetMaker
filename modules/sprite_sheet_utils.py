@@ -31,6 +31,10 @@ class CameraDirection(Enum):
     NEG_Y = "-y"
     NEG_Z = "-z"
     CUSTOM = "custom"
+class FrameSelectionMode(Enum):
+    ALL_FRAMES = "All Frames"
+    CUSTOM_RANGE = "Custom Range"
+    CUSTOM_COUNT = "Custom Count"
 
 
 # Classes
@@ -86,9 +90,10 @@ class RowParam:
         self.to_flip_h:bool = False
         self.to_flip_v:bool = False
         
-        self.manual_frames:bool = False
+        self.frame_selection_mode:FrameSelectionMode = FrameSelectionMode.ALL_FRAMES
         self.frame_start:int = 0
         self.frame_end:int = 250
+        self.frame_count:int = 250
 class SpriteSheetParam:
     def __init__(self):
         self.animation_rows:list[RowParam] = []
@@ -619,9 +624,6 @@ def ortho_cam_fit(camera, bounding_points, param: AutoCaptureParam):
     cam_world_loc = I_h.x * right + I_v.x * up + I_h.y * direction
     cam_world_loc -= direction * camera.data.display_size   # Viewport correction
     camera.matrix_world = Matrix.Translation(cam_world_loc) @ cam_rotation    # Intentionally done in case of a parented camera 
-
-
-# Methods
 def create_auto_camera(param:AutoCaptureParam):
     cam_data = bpy.data.cameras.new(name=AUTO_CAMERA_NAME)
     cam_data.type = 'ORTHO'
@@ -687,6 +689,9 @@ def delete_auto_camera():
     cam_obj = bpy.data.objects.get(AUTO_CAMERA_NAME)
     if cam_obj is not None:
         bpy.data.objects.remove(cam_obj, do_unlink=True) 
+
+
+# Methods
 def assign_objects_visibility(animation_rows):
 
     # Collect every object referenced across all rows capture items
@@ -728,6 +733,95 @@ def restore_object_visibility(original_visibility):
     for obj, (hide_viewport, hide_render) in original_visibility.items():
         obj.hide_viewport = hide_viewport
         obj.hide_render = hide_render
+def get_strip_fcurves(strip, action):
+
+    fcurves = []
+
+    # Skip if strip type does not support channelbags e.g non keyframe strips
+    if not hasattr(strip, "channelbag"):
+        return fcurves
+
+    # Iterate through all slots to collect channelbag fcurves
+    for slot in action.slots:
+        channelbag = strip.channelbag(slot, ensure=False)
+
+        # Skip if no channelbag found for this slot
+        if channelbag is None:
+            continue
+
+        fcurves.extend(channelbag.fcurves)
+
+    return fcurves
+def get_layer_fcurves(layer, action):
+
+    fcurves = []
+
+    # Iterate through all strips to collect fcurves from every slot
+    for strip in layer.strips:
+        fcurves.extend(get_strip_fcurves(strip, action))
+
+    return fcurves
+def get_action_fcurves(action):
+
+    fcurves = []
+
+    # Iterate through all layers to collect fcurves from every strip
+    for layer in action.layers:
+        fcurves.extend(get_layer_fcurves(layer, action))
+
+    return fcurves
+def scale_fcurve_keyframes(fcurve, orig_start, scale_factor):
+
+    # Scale every keyframe point and its handles relative to original start frame
+    for keyframe in fcurve.keyframe_points:
+        keyframe.co.x = orig_start + ((keyframe.co.x - orig_start) * scale_factor)
+        keyframe.handle_left.x = orig_start + ((keyframe.handle_left.x - orig_start) * scale_factor)
+        keyframe.handle_right.x = orig_start + ((keyframe.handle_right.x - orig_start) * scale_factor)
+
+    fcurve.update()
+def duplicate_and_scale_action(action, target_frame_count):
+
+    # Warn and return if action invalid
+    if action is None:
+        log("Invalid action provided to duplicate_and_scale_action", True, "ERROR")
+        return None
+
+
+    # Warn and return if target frame count invalid
+    if target_frame_count <= 0:
+        log("Invalid target frame count provided to duplicate_and_scale_action", True, "ERROR")
+        return None
+
+
+    # Get original frame range
+    orig_start, orig_end = action.frame_range
+    orig_count = (orig_end - orig_start) + 1
+
+
+    # Duplicate action so original stays untouched
+    temp_action = action.copy()
+    temp_action.name = f"{action.name}_SSMTemp"
+
+
+    # Calculate scale factor to remap frames (fallback to 1.0 if only a single frame exists)
+    scale_factor = (target_frame_count - 1) / (orig_count - 1) if orig_count > 1 else 1.0
+
+
+    # Collect all fcurves across layers strips and slots since action has no direct fcurves attribute
+    all_fcurves = get_action_fcurves(temp_action)
+
+
+    # Warn if no fcurves found to scale, temp action will just be a static copy
+    if len(all_fcurves) == 0:
+        log(f"No fcurves found on action '{action.name}' while scaling to {target_frame_count} frames", True, "ERROR")
+
+
+    # Scale keyframe positions for every fcurve found
+    for fcurve in all_fcurves:
+        scale_fcurve_keyframes(fcurve, orig_start, scale_factor)
+
+
+    return temp_action
 def render(output_file_path:str):
 
     # Set Output File Location
@@ -792,17 +886,18 @@ def pixelate_images(image_paths:dict[str, str], param:PixelateParam):  # images 
     original_scene = bpy.context.scene
 
 
-    # Set pixelate scene as active
-    bpy.context.window.scene = pixelate_scene
-
-
-    # Store composition groups
-    all_node_groups = get_node_groups(pixelate_scene.compositing_node_group)  #  Storing since removing scene won't remove node groups
-
-
     # Intentionally kept inside try so that temp scene is deleted even incase of failure
     exception = None
     try:
+
+        # Set pixelate scene as active
+        bpy.context.window.scene = pixelate_scene
+
+
+        # Store composition groups
+        all_node_groups = get_node_groups(pixelate_scene.compositing_node_group)  #  Storing since removing scene won't remove node groups
+
+
         # Remove and existing nodes from compositor
         tree = pixelate_scene.compositing_node_group
        
@@ -910,19 +1005,41 @@ class SpriteSheetMaker():
         self.on_sprite_creating.broadcast()
         render(output_path)
         self.on_sprite_created.broadcast()
-    def create_sprite_sheet_impl(self, param:SpriteSheetParam, temp_dir:str):
+    def create_sprite_sheet_impl(self, param:SpriteSheetParam, temp_dir:str, temp_actions:list):
 
         # Iterate through actions and capture render for each frame (Each action should have it's own folder (in order) & image names should be 1, 2, 3 for each frame respectively)
         for i, row in enumerate(param.animation_rows):
 
+            # Resolve effective capture items (swaps in a scaled temp action when using custom frame count)
+            effective_capture_items = row.capture_items
+            if(row.frame_selection_mode == FrameSelectionMode.CUSTOM_COUNT):
+                effective_capture_items = []
+                for (obj, action, slot) in row.capture_items:
+
+                    # Keep as is if no action assigned to scale
+                    if action is None:
+                        effective_capture_items.append((obj, action, slot))
+                        continue
+
+                    # Duplicate and scale action to match desired frame count
+                    temp_action = duplicate_and_scale_action(action, row.frame_count)
+                    if temp_action is None:
+                        effective_capture_items.append((obj, action, slot))
+                        continue
+
+                    # Track temp action so it gets deleted later even on failure
+                    temp_actions.append(temp_action)
+                    effective_capture_items.append((obj, temp_action, slot))
+
+
             # Calculate frame range
             frame_start = float('inf')
             frame_end = float('-inf')
-            if(row.manual_frames):
+            if(row.frame_selection_mode == FrameSelectionMode.CUSTOM_RANGE):
                 frame_start = row.frame_start
                 frame_end = row.frame_end
             else:
-                for item in row.capture_items:
+                for item in effective_capture_items:
                     obj, action, slot = item
                     if(action != None):
                         frame_start = min(frame_start, action.frame_range[0])
@@ -944,7 +1061,7 @@ class SpriteSheetMaker():
 
             # Assign action to all objects
             old_anim_data = []  # [(obj, old_action, old_slot), ...]
-            for (obj, action, slot) in row.capture_items:
+            for (obj, action, slot) in effective_capture_items:
 
                 # Skip if object is invalid or no Action provided or doesn't have attributes
                 if obj == None or not hasattr(obj, "animation_data") or not hasattr(obj.animation_data, "action") or not hasattr(obj.animation_data, "action_slot"):
@@ -1032,6 +1149,7 @@ class SpriteSheetMaker():
         original_camera = bpy.context.scene.camera
         original_resolution_x = bpy.context.scene.render.resolution_x
         original_resolution_y = bpy.context.scene.render.resolution_y
+        temp_actions = []  # Tracks temp scaled actions so they get deleted even on failure
 
 
         # Intentionally kept inside try so that visibility is restored even incase of failure
@@ -1043,7 +1161,7 @@ class SpriteSheetMaker():
 
             
             # Create images required for sheet 
-            self.create_sprite_sheet_impl(param, temp_dir)
+            self.create_sprite_sheet_impl(param, temp_dir, temp_actions)
 
 
             # Combine images together into single file and paste in output
@@ -1063,6 +1181,11 @@ class SpriteSheetMaker():
             bpy.context.scene.camera = original_camera
             bpy.context.scene.render.resolution_x = original_resolution_x
             bpy.context.scene.render.resolution_y = original_resolution_y
+
+            # Delete any temp scaled actions created for custom frame count rows
+            for temp_action in temp_actions:
+                if temp_action is not None:
+                    bpy.data.actions.remove(temp_action)
 
 
         return True

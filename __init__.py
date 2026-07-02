@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Sprite Sheet Maker",
     "author": "Manas R. Makde",
-    "version": (5, 2, 2),
+    "version": (5, 2, 3),
     "description": "3D to 2D sprite sheet converter with optional pixelation"
 }
 
@@ -26,7 +26,6 @@ DEFAULT_SETTINGS_FILE_NAME = "ssm_settings.json"
 PIXELATE_TEST_IMAGE_POSTFIX = "pixelated"
 UNTITLED_ROW_NAME = "<Untitled>"
 UNTITLED_LABEL_TEXT = "Untitled"
-EXCLUDE_EXPORT_PROPERTIES = {"rna_type", "name", "capture_items", "label", "pixelate_image_path", "enabled"}
 NON_SERIALIZABLE_PROPERTIES = {"custom_camera", "h_center_object", "v_center_object"} 
 
 
@@ -134,7 +133,7 @@ class SSM_RowInfo(PropertyGroup):
         SSM_RowInfo._is_propagating = False
 
 
-    enabled: BoolProperty(name="Enabled", default=True, description="If disabled this row will not be included while creating the sprite sheet")
+    enabled: BoolProperty(name="Enabled", default=True, description="If disabled this row will not be included while creating the sprite sheet\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "enabled"))
     label: StringProperty(name="Label", default="", description="The text that will be added on top of the row in the sprite sheet")
     capture_items: CollectionProperty(type=SSM_CaptureItem)
     capture_item_index: IntProperty(default=0, description="Pointer tracking active item inside collection")
@@ -193,9 +192,20 @@ class SSM_RowInfo(PropertyGroup):
     
     
     # Manual frame settings
-    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the row\nIf disabled, the start & end frame of longest action will be taken\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "manual_frames"))
-    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574, description="Frame to start capturing from\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_start"))
-    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574, description="Frame to stop capturing at (inclusive)\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_end"))
+    frame_selection_mode: EnumProperty(
+        name="Frame Selection",
+        description="Dictates which frames are captured for this row\nHold Alt & change to sync across all rows",
+        items = [
+            (FrameSelectionMode.ALL_FRAMES.value, "All Frames", "Captures the full frame range of the longest assigned action"),
+            (FrameSelectionMode.CUSTOM_RANGE.value, "Custom Range", "Captures a manually assigned start and end frame range"),
+            (FrameSelectionMode.CUSTOM_COUNT.value, "Custom Count", "Scales assigned actions to fit a desired frame count")
+        ],
+        default=FrameSelectionMode.ALL_FRAMES.value,
+        update=lambda self, ctx: self.alt_sync_update(ctx, "frame_selection_mode")
+    )
+    frame_start: IntProperty(name="Start", default=0, min=-1048574, soft_max=1048574, description="Frame to start capturing from\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_start"))
+    frame_end: IntProperty(name="End", default=250, min=-1048574, soft_max=1048574, description="Frame to stop capturing at (inclusive)\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_end"))
+    frame_count: IntProperty(name="Count", default=10, min=1, soft_max=1048574, description="Desired frame count after scaling assigned actions\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_count"))
 class SSM_Properties(PropertyGroup):
 
     def update_temp_folder(self, context):
@@ -208,6 +218,8 @@ class SSM_Properties(PropertyGroup):
 
     # Output settings
     label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000, description="Font size of label text")
+    label_show_frame_count: BoolProperty(name="Frame Count in Label", default=False, description="If enabled, appends the frame count of each row to its label as ' [<frame count>]'")
+    label_show_row_size: BoolProperty(name="Row Size in Label", default=False, description="If enabled, appends the size of each row to its label as ' (<width>x<height>)'\nIf both 'Frame Count in Label' and this are enabled, frame count is shown first")
     label_color: FloatVectorProperty(name="Label Color", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0), min=0.0, max=1.0, description="Color of the label text on top of each row")
     background_color: FloatVectorProperty(name="Background Color", subtype='COLOR', size=4, default=(0.0, 0.0, 0.0, 0.0), min=0.0, max=1.0, description="Background color for entire sheet (or rows, or images based on combine mode)")
     surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the top of the sprite sheet")
@@ -224,7 +236,7 @@ class SSM_Properties(PropertyGroup):
             (SpriteConsistency.ROW.value, "Row Consistent", "All sprites in a row have the same dimensions"),
             (SpriteConsistency.ALL.value, "All Consistent", "All sprites throughout the sheet have the same dimensions")
         ],
-        default=SpriteConsistency.INDIVIDUAL.value
+        default=SpriteConsistency.ROW.value
     )
     sprite_align: EnumProperty(
         name="Sprite Align",
@@ -568,7 +580,7 @@ class SSM_OT_ExportSettings(Operator, ExportHelper):
         
         # Store all common properties
         for p in props.rna_type.properties:
-            if not p.is_readonly and p.identifier not in EXCLUDE_EXPORT_PROPERTIES:
+            if not p.is_readonly and p.identifier not in { "name", "show_output_settings", "show_row_info" }:
                 prop_value = getattr(props, p.identifier)
                 export_data["props"][p.identifier] = list(prop_value) if getattr(p, "is_array", False) else prop_value
 
@@ -818,8 +830,8 @@ class SSM_OT_CreateSingleSprite(Operator):
         try:
 
             # Row parameters            
-            row_param  = gen_row_param(get_current_row())
-            row_param.manual_frames = True
+            row_param = gen_row_param(get_current_row())
+            row_param.frame_selection_mode = FrameSelectionMode.CUSTOM_RANGE
             row_param.frame_start = bpy.context.scene.frame_current
             row_param.frame_end = bpy.context.scene.frame_current
 
@@ -988,7 +1000,7 @@ class SSM_PT_MainPanel(Panel):
         
         
         # Custom Camera
-        split = ui_box.split(factor=0.55)
+        split = ui_box.split(factor=0.40)
         split.label(text="Custom Camera")
         split.prop(row, "custom_camera", text="")
         
@@ -1003,7 +1015,7 @@ class SSM_PT_MainPanel(Panel):
             sub_col = sub_box.column()
 
             # Camera Direction
-            split = sub_col.split(factor=0.60)
+            split = sub_col.split(factor=0.40)
             split.label(text="Camera Direction")
             split.prop(row, "camera_direction", text="")
 
@@ -1071,19 +1083,17 @@ class SSM_PT_MainPanel(Panel):
         ui_box.prop(row, "to_flip_v")
         
 
-        # Manual Frames
-        ui_box.prop(row, "manual_frames")
-        if row.manual_frames:  # Frame Start & End
-            
-            # Indent sub props
-            sub_box = ui_box.row().split(factor=0.02)
-            sub_box.label(text="")
-            sub_col = sub_box.column()
-            
-            ui_line2 = sub_col.row(align=True)
-            split = ui_line2.split(factor=0.5)
+        # Frame Selection
+        split = ui_box.split(factor=0.40)
+        split.label(text="Frame Selection")
+        split.prop(row, "frame_selection_mode", text="")
+        if row.frame_selection_mode == FrameSelectionMode.CUSTOM_RANGE.value:  # Frame Start & End
+            ui_line2 = ui_box.row(align=True)
+            split = ui_line2.split(factor=0.50)
             split.prop(row, 'frame_start', text='Start')
             split.prop(row, 'frame_end', text='End')
+        elif row.frame_selection_mode == FrameSelectionMode.CUSTOM_COUNT.value:  # Frame Count
+            ui_box.prop(row, 'frame_count', text='Count')
     def draw(self, context):
         layout = self.layout
         scene = context.scene
@@ -1144,6 +1154,10 @@ class SSM_PT_MainPanel(Panel):
 
             # Label Font Size
             box.prop(props, "label_font_size", text="Label Font Size")
+
+            # Frame Count in Label & Row Size in Label
+            box.prop(props, "label_show_frame_count", text="Frame Count in Label")
+            box.prop(props, "label_show_row_size", text="Row Size in Label")
 
             # Label Color
             ui_line = box.row()
@@ -1293,8 +1307,12 @@ def gen_row_param(row):
 
     # Auto copy row properties
     for prop in row_param.__dict__:
-        if hasattr(row, prop) and prop not in ["capture_items"]:
+        if hasattr(row, prop) and prop not in ["capture_items", "frame_selection_mode"]:
             setattr(row_param, prop, getattr(row, prop))
+
+
+    # Manual override for Enum
+    row_param.frame_selection_mode = FrameSelectionMode(row.frame_selection_mode)
 
 
     # Assign sub params
