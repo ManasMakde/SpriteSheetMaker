@@ -219,6 +219,8 @@ class SSM_Properties(PropertyGroup):
 
     # Output settings
     label_font_size: IntProperty(name="Label Font Size", default=24, min=0, soft_max=1000, description="Font size of label text")
+    label_show_frame_count: BoolProperty(name="Frame Count in Label", default=False, description="If enabled, appends the frame count of each row to its label as ' [<frame count>]'")
+    label_show_row_size: BoolProperty(name="Row Size in Label", default=False, description="If enabled, appends the size of each row to its label as ' (<width>x<height>)'\nIf both 'Frame Count in Label' and this are enabled, frame count is shown first")
     label_color: FloatVectorProperty(name="Label Color", subtype='COLOR', size=4, default=(1.0, 1.0, 1.0, 1.0), min=0.0, max=1.0, description="Color of the label text on top of each row")
     background_color: FloatVectorProperty(name="Background Color", subtype='COLOR', size=4, default=(0.0, 0.0, 0.0, 0.0), min=0.0, max=1.0, description="Background color for entire sheet (or rows, or images based on combine mode)")
     surrounding_margin_top: IntProperty(name="Surrounding Margin Top", default=15, min=0, soft_max=1000, description="Margin (in pixels) to add to the top of the sprite sheet")
@@ -235,7 +237,7 @@ class SSM_Properties(PropertyGroup):
             (SpriteConsistency.ROW.value, "Row Consistent", "All sprites in a row have the same dimensions"),
             (SpriteConsistency.ALL.value, "All Consistent", "All sprites throughout the sheet have the same dimensions")
         ],
-        default=SpriteConsistency.INDIVIDUAL.value
+        default=SpriteConsistency.ROW.value
     )
     sprite_align: EnumProperty(
         name="Sprite Align",
@@ -1153,6 +1155,10 @@ class SSM_PT_MainPanel(Panel):
 
             # Label Font Size
             box.prop(props, "label_font_size", text="Label Font Size")
+
+            # Frame Count in Label & Row Size in Label
+            box.prop(props, "label_show_frame_count", text="Frame Count in Label")
+            box.prop(props, "label_show_row_size", text="Row Size in Label")
 
             # Label Color
             ui_line = box.row()

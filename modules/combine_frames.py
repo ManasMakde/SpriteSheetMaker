@@ -54,6 +54,8 @@ class AssembleParam:
         self.consistency:SpriteConsistency = SpriteConsistency.INDIVIDUAL
         self.align:SpriteAlign = SpriteAlign.BOTTOM_CENTER
         self.combine_mode:CombineMode = CombineMode.SHEET
+        self.label_show_frame_count:bool = False
+        self.label_show_row_size:bool = False
 
 
 # Methods
@@ -166,6 +168,26 @@ def calc_align_offset(align:SpriteAlign, large_width:int, large_height:int, smal
 
 
     return int(x_offset), int(y_offset)
+def calc_row_size(param:AssembleParam, row_data:RowData, global_img_widest:int, global_img_tallest:int):
+
+    # Get essentials
+    img_count = len(row_data.images)
+    gaps = param.image_margin * (img_count - 1)
+
+
+    # Calculate row width & height
+    if(param.consistency == SpriteConsistency.INDIVIDUAL):
+        row_width = row_data.img_accum_width + gaps
+        row_height = row_data.img_tallest
+    elif(param.consistency == SpriteConsistency.ROW):
+        row_width = (row_data.img_widest * img_count) + gaps
+        row_height = row_data.img_tallest
+    elif(param.consistency == SpriteConsistency.ALL):
+        row_width = (global_img_widest * img_count) + gaps
+        row_height = global_img_tallest
+
+
+    return int(row_width), int(row_height)
 def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_widest:int, global_img_tallest:int, output_path:str):
 
     # Extract from param
@@ -181,17 +203,7 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
     for row_count, row_data in enumerate(rows):
 
         # Calculate row height & width
-        img_count = len(row_data.images)
-        gaps = image_margin * (img_count - 1)
-        if(param.consistency == SpriteConsistency.INDIVIDUAL):
-            row_width = row_data.img_accum_width + gaps
-            row_height = row_data.img_tallest
-        elif(param.consistency == SpriteConsistency.ROW):
-            row_width = (row_data.img_widest * img_count) + gaps
-            row_height = row_data.img_tallest
-        elif(param.consistency == SpriteConsistency.ALL):
-            row_width = (global_img_widest * img_count) + gaps
-            row_height = global_img_tallest
+        row_width, row_height = calc_row_size(param, row_data, global_img_widest, global_img_tallest)
 
 
         # Add to height & width
@@ -296,17 +308,7 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
     # Iterate and create strips
     for _, row_data in enumerate(rows):
-        img_count = len(row_data.images)
-        gaps = image_margin * (img_count - 1)
-        if(param.consistency == SpriteConsistency.INDIVIDUAL):
-            row_width = row_data.img_accum_width + gaps
-            img_height = row_data.img_tallest
-        elif(param.consistency == SpriteConsistency.ROW):
-            row_width = row_data.img_widest * img_count + gaps
-            img_height = row_data.img_tallest
-        elif(param.consistency == SpriteConsistency.ALL):
-            row_width = global_img_widest * img_count + gaps
-            img_height = global_img_tallest
+        row_width, img_height = calc_row_size(param, row_data, global_img_widest, global_img_tallest)
 
     
         # Assign strip height & width
@@ -433,18 +435,12 @@ def assemble_images(param:AssembleParam, input_folder_path:str, output_path:str)
     global_img_widest:int = 0
     global_img_tallest:int = 0
     rows:list[RowData] = []
+    base_labels:list[str] = []
     for action_folder in action_folders:
 
         # Create row data
         row_data = RowData()
-
-
-        # Add label to row data
-        row_data.label_text = action_folder.split('_', 1)[1]
-        label_bbox = (0, 0, 0, 0) if param.font_size == 0 else font.getbbox(row_data.label_text)
-        row_data.label_width = (label_bbox[2] - label_bbox[0])
-        row_data.label_height = (label_bbox[3] - label_bbox[1]) 
-        row_data.label_offset = (0, -label_bbox[1])
+        base_labels.append(action_folder.split('_', 1)[1])
 
 
         # Images
@@ -468,6 +464,26 @@ def assemble_images(param:AssembleParam, input_folder_path:str, output_path:str)
 
         # Append row data
         rows.append(row_data)
+
+
+    # Build labels (along with frame count and row size)
+    for row_data, base_label_text in zip(rows, base_labels):
+
+        # Build label postfix (Frame Count always comes before Row Size when both are enabled)
+        label_postfix = ""
+        if param.label_show_frame_count:
+            label_postfix += f" [{len(row_data.images)}]"
+        if param.label_show_row_size:
+            row_width, row_height = calc_row_size(param, row_data, global_img_widest, global_img_tallest)
+            label_postfix += f" ({row_width} x {row_height})"
+
+
+        # Add label to row data
+        row_data.label_text = base_label_text + label_postfix
+        label_bbox = (0, 0, 0, 0) if param.font_size == 0 else font.getbbox(row_data.label_text)
+        row_data.label_width = (label_bbox[2] - label_bbox[0])
+        row_data.label_height = (label_bbox[3] - label_bbox[1]) 
+        row_data.label_offset = (0, -label_bbox[1])
 
 
     # Combine into sheet or strips 
