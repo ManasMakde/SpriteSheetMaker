@@ -134,7 +134,7 @@ class SSM_RowInfo(PropertyGroup):
         SSM_RowInfo._is_propagating = False
 
 
-    enabled: BoolProperty(name="Enabled", default=True, description="If disabled this row will not be included while creating the sprite sheet")
+    enabled: BoolProperty(name="Enabled", default=True, description="If disabled this row will not be included while creating the sprite sheet\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "enabled"))
     label: StringProperty(name="Label", default="", description="The text that will be added on top of the row in the sprite sheet")
     capture_items: CollectionProperty(type=SSM_CaptureItem)
     capture_item_index: IntProperty(default=0, description="Pointer tracking active item inside collection")
@@ -193,9 +193,20 @@ class SSM_RowInfo(PropertyGroup):
     
     
     # Manual frame settings
-    manual_frames: BoolProperty(name="Manual Frame Selection", default=False, description="If enabled, The Start & End frames (inclusive) can be manually assigned for the row\nIf disabled, the start & end frame of longest action will be taken\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "manual_frames"))
-    frame_start: IntProperty(name="Start", default=0, min=-1048574, max=1048574, description="Frame to start capturing from\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_start"))
-    frame_end: IntProperty(name="End", default=250, min=-1048574, max=1048574, description="Frame to stop capturing at (inclusive)\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_end"))
+    frame_selection_mode: EnumProperty(
+        name="Frame Selection",
+        description="Dictates which frames are captured for this row\nHold Alt & change to sync across all rows",
+        items = [
+            (FrameSelectionMode.ALL_FRAMES.value, "All Frames", "Captures the full frame range of the longest assigned action"),
+            (FrameSelectionMode.CUSTOM_RANGE.value, "Custom Range", "Captures a manually assigned start and end frame range"),
+            (FrameSelectionMode.CUSTOM_COUNT.value, "Custom Count", "Scales assigned actions to fit a desired frame count")
+        ],
+        default=FrameSelectionMode.ALL_FRAMES.value,
+        update=lambda self, ctx: self.alt_sync_update(ctx, "frame_selection_mode")
+    )
+    frame_start: IntProperty(name="Start", default=0, min=-1048574, soft_max=1048574, description="Frame to start capturing from\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_start"))
+    frame_end: IntProperty(name="End", default=250, min=-1048574, soft_max=1048574, description="Frame to stop capturing at (inclusive)\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_end"))
+    frame_count: IntProperty(name="Count", default=10, min=1, soft_max=1048574, description="Desired frame count after scaling assigned actions\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_count"))
 class SSM_Properties(PropertyGroup):
 
     def update_temp_folder(self, context):
@@ -818,8 +829,8 @@ class SSM_OT_CreateSingleSprite(Operator):
         try:
 
             # Row parameters            
-            row_param  = gen_row_param(get_current_row())
-            row_param.manual_frames = True
+            row_param = gen_row_param(get_current_row())
+            row_param.frame_selection_mode = FrameSelectionMode.CUSTOM_RANGE
             row_param.frame_start = bpy.context.scene.frame_current
             row_param.frame_end = bpy.context.scene.frame_current
 
@@ -988,7 +999,7 @@ class SSM_PT_MainPanel(Panel):
         
         
         # Custom Camera
-        split = ui_box.split(factor=0.55)
+        split = ui_box.split(factor=0.40)
         split.label(text="Custom Camera")
         split.prop(row, "custom_camera", text="")
         
@@ -1003,7 +1014,7 @@ class SSM_PT_MainPanel(Panel):
             sub_col = sub_box.column()
 
             # Camera Direction
-            split = sub_col.split(factor=0.60)
+            split = sub_col.split(factor=0.40)
             split.label(text="Camera Direction")
             split.prop(row, "camera_direction", text="")
 
@@ -1071,19 +1082,17 @@ class SSM_PT_MainPanel(Panel):
         ui_box.prop(row, "to_flip_v")
         
 
-        # Manual Frames
-        ui_box.prop(row, "manual_frames")
-        if row.manual_frames:  # Frame Start & End
-            
-            # Indent sub props
-            sub_box = ui_box.row().split(factor=0.02)
-            sub_box.label(text="")
-            sub_col = sub_box.column()
-            
-            ui_line2 = sub_col.row(align=True)
-            split = ui_line2.split(factor=0.5)
+        # Frame Selection
+        split = ui_box.split(factor=0.40)
+        split.label(text="Frame Selection")
+        split.prop(row, "frame_selection_mode", text="")
+        if row.frame_selection_mode == FrameSelectionMode.CUSTOM_RANGE.value:  # Frame Start & End
+            ui_line2 = ui_box.row(align=True)
+            split = ui_line2.split(factor=0.50)
             split.prop(row, 'frame_start', text='Start')
             split.prop(row, 'frame_end', text='End')
+        elif row.frame_selection_mode == FrameSelectionMode.CUSTOM_COUNT.value:  # Frame Count
+            ui_box.prop(row, 'frame_count', text='Count')
     def draw(self, context):
         layout = self.layout
         scene = context.scene
@@ -1293,8 +1302,12 @@ def gen_row_param(row):
 
     # Auto copy row properties
     for prop in row_param.__dict__:
-        if hasattr(row, prop) and prop not in ["capture_items"]:
+        if hasattr(row, prop) and prop not in ["capture_items", "frame_selection_mode"]:
             setattr(row_param, prop, getattr(row, prop))
+
+
+    # Manual override for Enum
+    row_param.frame_selection_mode = FrameSelectionMode(row.frame_selection_mode)
 
 
     # Assign sub params
