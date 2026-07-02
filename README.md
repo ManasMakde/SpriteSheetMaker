@@ -75,7 +75,8 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    You can reorder them using the arrow ▲ and ▼ buttons on the side.
 
    > **Note:**  
-   > The order of rows in this list corresponds to the order in which they appear in the sprite sheet.
+   > 1. The order of rows in this list corresponds to the order in which they appear in the sprite sheet.
+   > 2. You can hold Alt and enable/disable any row the changes will sync across all other rows.
 
 
 1. **Row Info:**  
@@ -176,12 +177,6 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    > **Note:**  
    > If the pixelated sprite quality is improper, Try increasing the `Pixels Per Meter` and trying again. 
 
-1. **Manual Frame Selection:**  
-   ![Manual Frame Selection screenshot](images/screenshots/manual_frame_screenshot.png)  
-
-   If enabled, you can manually set the **Start** & **End** frames (inclusive) to capture in the row.  
-   If disabled, The start & end frame of longest duration action will be taken.
-
 
 1. **To Flip H:**  
    Horizontally flips the rendered image before saving into temp folder. 
@@ -191,11 +186,25 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    Vertically flips the rendered image before saving into temp folder. 
 
 
+1. **Frame Selection:**  
+   Determines which frames are to be rendered  
+   `All Frames`: The start & end frame of longest duration action will be taken.  
+   `Custom Range`: You can manually set the `Start` & `End` frames (inclusive) to capture in the row.  
+   `Custom Count`: All actions will have their number of frames scaled up/down to match `Count`.
+
+
 1. **Output Settings**  
    ![Output Settings screenshot](images/screenshots/output_settings_screenshot.png)   
 
    - **Label Font Size:**  
       The font size of the action name labels in sprite sheet, If you do not want labels in your sprite sheet you can set it to 0.  
+
+   - **Frame Count in Label:**  
+      If enabled, The number of frames will be added into the label of each row.
+
+   - **Row Size in Label:**  
+      If enabled, The width & height will be added into the label of each row.  
+      `Image Margin` will be taken into account but not `Surrounding Margings`.
 
    - **Label Color:**  
       The color of the label on top of the row.
