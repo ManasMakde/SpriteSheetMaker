@@ -206,6 +206,7 @@ class SSM_RowInfo(PropertyGroup):
     frame_start: IntProperty(name="Start", default=0, min=-1048574, soft_max=1048574, description="Frame to start capturing from\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_start"))
     frame_end: IntProperty(name="End", default=250, min=-1048574, soft_max=1048574, description="Frame to stop capturing at (inclusive)\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_end"))
     frame_count: IntProperty(name="Count", default=10, min=1, soft_max=1048574, description="Desired frame count after scaling assigned actions\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "frame_count"))
+    max_columns: IntProperty(name="Max Columns", default=0, min=0, soft_max=1000, description="Maximum number of columns (frames) per sub-row before wrapping to a new line. Set to 0 for unlimited\nHold Alt & change to sync across all rows", update=lambda self, ctx: self.alt_sync_update(ctx, "max_columns"))
 class SSM_Properties(PropertyGroup):
 
     def update_temp_folder(self, context):
@@ -1098,6 +1099,9 @@ class SSM_PT_MainPanel(Panel):
             split.prop(row, 'frame_end', text='End')
         elif row.frame_selection_mode == FrameSelectionMode.CUSTOM_COUNT.value:  # Frame Count
             ui_box.prop(row, 'frame_count', text='Count')
+
+        # Max Columns
+        ui_box.prop(row, 'max_columns', text='Max Columns (0 = Unlimited)')
     def draw(self, context):
         layout = self.layout
         scene = context.scene
@@ -1352,6 +1356,9 @@ def gen_sprite_sheet_param():
 
     # Assign Assemble param
     param.assemble_param = gen_assemble_param()
+
+    # Populate per-row max_columns into assemble param
+    param.assemble_param.row_max_columns = [row.max_columns for row in param.animation_rows]
 
 
     return param

@@ -94,6 +94,7 @@ class RowParam:
         self.frame_start:int = 0
         self.frame_end:int = 250
         self.frame_count:int = 250
+        self.max_columns:int = 0
 class SpriteSheetParam:
     def __init__(self):
         self.animation_rows:list[RowParam] = []

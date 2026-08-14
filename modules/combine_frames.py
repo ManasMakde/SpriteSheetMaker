@@ -43,6 +43,7 @@ class RowData:
         self.img_accum_width:int = 0  # Combined
         self.img_widest:int = 0  # width of the widest image in the row
         self.img_tallest:int = 0  # height of the tallest image in the row
+        self.max_columns:int = 0  # 0 = unlimited, otherwise wraps to new sub-row after this many frames
 class AssembleParam:
     def __init__(self):
         self.font_size:int = 24
@@ -56,6 +57,7 @@ class AssembleParam:
         self.combine_mode:CombineMode = CombineMode.SHEET
         self.label_show_frame_count:bool = False
         self.label_show_row_size:bool = False
+        self.row_max_columns:list[int] = []  # per-row max columns (0 = unlimited); indexed by row order
 
 
 # Methods
@@ -172,19 +174,36 @@ def calc_row_size(param:AssembleParam, row_data:RowData, global_img_widest:int, 
 
     # Get essentials
     img_count = len(row_data.images)
-    gaps = param.image_margin * (img_count - 1)
+    max_cols = row_data.max_columns if row_data.max_columns > 0 else img_count
+
+
+    # Calculate number of sub-rows and columns per sub-row
+    cols_per_line = min(img_count, max_cols)
+    sub_row_count = -(-img_count // max_cols)  # ceiling division
+    gaps_h = param.image_margin * (cols_per_line - 1)
+    gaps_v = param.image_margin * (sub_row_count - 1) if sub_row_count > 1 else 0
 
 
     # Calculate row width & height
     if(param.consistency == SpriteConsistency.INDIVIDUAL):
-        row_width = row_data.img_accum_width + gaps
-        row_height = row_data.img_tallest
+        # For individual consistency with wrapping, width is the widest sub-row's accumulated width
+        if row_data.max_columns > 0:
+            max_sub_row_width = 0
+            for sr in range(sub_row_count):
+                start = sr * max_cols
+                end = min(start + max_cols, img_count)
+                sub_row_width = sum(img.width for img in row_data.images[start:end]) + param.image_margin * (end - start - 1)
+                max_sub_row_width = max(max_sub_row_width, sub_row_width)
+            row_width = max_sub_row_width
+        else:
+            row_width = row_data.img_accum_width + gaps_h
+        row_height = row_data.img_tallest * sub_row_count + gaps_v
     elif(param.consistency == SpriteConsistency.ROW):
-        row_width = (row_data.img_widest * img_count) + gaps
-        row_height = row_data.img_tallest
+        row_width = (row_data.img_widest * cols_per_line) + gaps_h
+        row_height = row_data.img_tallest * sub_row_count + gaps_v
     elif(param.consistency == SpriteConsistency.ALL):
-        row_width = (global_img_widest * img_count) + gaps
-        row_height = global_img_tallest
+        row_width = (global_img_widest * cols_per_line) + gaps_h
+        row_height = global_img_tallest * sub_row_count + gaps_v
 
 
     return int(row_width), int(row_height)
@@ -271,7 +290,18 @@ def combine_into_sheet(param:AssembleParam, rows:list[RowData], global_img_wides
 
 
         # Paste images
+        max_cols = row_data.max_columns if row_data.max_columns > 0 else len(row_data.images)
         for i, img in enumerate(row_data.images):
+
+            # Wrap to next sub-row if max_columns reached
+            if i > 0 and row_data.max_columns > 0 and i % max_cols == 0:
+                paste_width = surrounding_margin[3]
+                if(param.consistency == SpriteConsistency.INDIVIDUAL):
+                    paste_height += row_data.img_tallest + image_margin
+                elif(param.consistency == SpriteConsistency.ROW):
+                    paste_height += row_data.img_tallest + image_margin
+                elif(param.consistency == SpriteConsistency.ALL):
+                    paste_height += global_img_tallest + image_margin
             
             # Get cell size
             large_width, large_height = img.width, row_data.img_tallest
@@ -373,7 +403,18 @@ def combine_into_strips(param:AssembleParam, rows:list[RowData], global_img_wide
 
         # Paste images
         paste_width = surrounding_margin_left
-        for img in row_data.images:
+        max_cols = row_data.max_columns if row_data.max_columns > 0 else len(row_data.images)
+        for i, img in enumerate(row_data.images):
+
+            # Wrap to next sub-row if max_columns reached
+            if i > 0 and row_data.max_columns > 0 and i % max_cols == 0:
+                paste_width = surrounding_margin_left
+                if(param.consistency == SpriteConsistency.INDIVIDUAL):
+                    paste_height += row_data.img_tallest + image_margin
+                elif(param.consistency == SpriteConsistency.ROW):
+                    paste_height += row_data.img_tallest + image_margin
+                elif(param.consistency == SpriteConsistency.ALL):
+                    paste_height += global_img_tallest + image_margin
             
             # Get cell size
             large_width, large_height = img.width, row_data.img_tallest
@@ -504,6 +545,12 @@ def assemble_images(param:AssembleParam, input_folder_path:str, output_path:str)
 
         # Append row data
         rows.append(row_data)
+
+
+    # Assign max_columns from param to each row_data
+    for i, row_data in enumerate(rows):
+        if i < len(param.row_max_columns):
+            row_data.max_columns = param.row_max_columns[i]
 
 
     # Combine into sheet or strips 
