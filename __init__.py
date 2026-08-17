@@ -1101,7 +1101,7 @@ class SSM_PT_MainPanel(Panel):
             ui_box.prop(row, 'frame_count', text='Count')
 
         # Max Columns
-        ui_box.prop(row, 'max_columns', text='Max Columns (0 = Unlimited)')
+        ui_box.prop(row, 'max_columns', text='Max Columns')
     def draw(self, context):
         layout = self.layout
         scene = context.scene

@@ -192,6 +192,9 @@ A blender addon to convert your 3D animations into 2D sprite sheets with in-buil
    `Custom Range`: You can manually set the `Start` & `End` frames (inclusive) to capture in the row.  
    `Custom Count`: All actions will have their number of frames scaled up/down to match `Count`.
 
+1. **Column Limit:**  
+   If a given animation row has exceeded this limit, it will continue in the next row. Useful if you have animations with high frame count but still want to maintain a width distance. Set to 0 if you don't want to impose any limit.
+
 
 1. **Output Settings**  
    ![Output Settings screenshot](images/screenshots/output_settings_screenshot.png)   
